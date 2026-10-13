@@ -1,0 +1,9 @@
+{
+  "name": "reading-log",
+  "private": true,
+  "type": "module",
+  "description": "우리집 독서기록 - static PWA, no build step. package.json only marks the JS as ES modules for the Node unit tests.",
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  }
+}

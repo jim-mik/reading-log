@@ -4,6 +4,7 @@ import { h, clear } from './util.js';
 import * as store from './store.js';
 import { icon } from './ui.js';
 import { registerServiceWorker } from './pwa.js';
+import * as sync from './sync.js';
 import { renderHome } from './views/home.js';
 import { renderShelf } from './views/shelf.js';
 import { renderStats } from './views/report.js';
@@ -64,6 +65,7 @@ async function boot() {
   history.replaceState(null, '');
   render();
   registerServiceWorker();
+  sync.start();
 }
 
 boot();

@@ -240,6 +240,9 @@ label.toggle input { width: 22px; height: 22px; accent-color: var(--accent); }
 details.more summary { color: var(--accent); font-weight: 600; padding: 6px 0; cursor: pointer; }
 details.more[open] { display: flex; flex-direction: column; gap: 10px; }
 .h3-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+ol.steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; line-height: 1.5; }
+.break { overflow-wrap: anywhere; }
+a.btn { color: inherit; text-decoration: none; }
 
 /* ---------- covers & rows ---------- */
 .cover { flex: none; object-fit: cover; border-radius: 4px; background: var(--surface-2); border: 1px solid var(--border); }

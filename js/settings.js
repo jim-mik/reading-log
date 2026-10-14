@@ -1,4 +1,4 @@
-// Per-phone settings (API keys, choices). Kept in localStorage, never in backups.
+// Per-phone settings (API keys, choices, the family sync link). Kept in localStorage, never in backups.
 
 const KEY = 'reading-log-settings';
 
@@ -11,6 +11,15 @@ const DEFAULTS = {
   lastReaderIds: [],
   lastAloud: false,
   lastBackupAt: '',
+  // family sync (sync.js)
+  syncUrl: '',
+  syncKey: '',
+  syncDevice: '',
+  syncCursor: 0,
+  syncLogId: '',
+  syncAt: '',
+  syncError: '',
+  syncSheetUrl: '',
 };
 
 let cache;

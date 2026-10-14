@@ -3,6 +3,7 @@
 import { h, todayStr, prettyDate, daysBetween } from '../util.js';
 import * as store from '../store.js';
 import { settings } from '../settings.js';
+import * as sync from '../sync.js';
 import { headline } from '../stats.js';
 import { icon, cover, whoChip, emptyState } from '../ui.js';
 import { openEditor } from './editor.js';
@@ -17,11 +18,13 @@ export function renderHome(root, { goTo }) {
     h('button', { class: 'big-btn', onClick: () => openEditor({ start: 'photo' }) }, icon('camera', 30), '사진으로'),
     h('button', { class: 'big-btn', onClick: () => openEditor() }, icon('pencil', 30), '직접 입력'));
 
-  // Backup reminder: data lives only on this phone.
+  // Backup reminder when data lives only on this phone; with family sync, a warning when it keeps failing.
   const last = settings().lastBackupAt;
   const age = last ? daysBetween(last.slice(0, 10), today) : null;
-  const backup = rows.length >= 5 && (age === null || age >= 30) && h('button', { class: 'banner', onClick: () => goTo('settings') },
-    age === null ? '아직 백업한 적이 없어요. 휴대폰을 바꾸면 기록이 사라질 수 있어요. 백업하기 ›' : `마지막 백업이 ${age}일 전이에요. 백업하기 ›`);
+  const backup = sync.linked()
+    ? sync.problem() && h('button', { class: 'banner', onClick: () => goTo('settings') }, `가족 동기화가 하루 넘게 안 되고 있어요. ${sync.problem()} ›`)
+    : rows.length >= 5 && (age === null || age >= 30) && h('button', { class: 'banner', onClick: () => goTo('settings') },
+      age === null ? '아직 백업한 적이 없어요. 휴대폰을 바꾸면 기록이 사라질 수 있어요. 백업하기 ›' : `마지막 백업이 ${age}일 전이에요. 백업하기 ›`);
 
   const readers = store.readers();
   const summary = readers.length && h('section', { class: 'card' },

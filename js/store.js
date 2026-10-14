@@ -1,9 +1,12 @@
 // All data lives in IndexedDB on the phone and is mirrored in memory (`state`).
 // Records are never hard-deleted: `deletedAt` marks them, so a backup merged on
 // another phone carries the deletion with it. The newer `updatedAt` wins a merge.
+// Every change made on this phone is also noted in the `outbox` store until family
+// sync (sync.js) has sent it.
 
 import { uid, nowIso, normTitle } from './util.js';
 import { DEFAULT_SUBJECTS } from './catalog.js';
+import { planMerge, keyOf } from './merge.js';
 
 const DB_NAME = 'reading-log';
 const TABLES = ['books', 'reads', 'readers'];
@@ -26,16 +29,24 @@ export function onChange(fn) {
 }
 const changed = () => listeners.forEach((fn) => fn());
 
+// Called when something new waits in the outbox.
+const outboxListeners = new Set();
+export function onOutbox(fn) {
+  outboxListeners.add(fn);
+}
+
 // ---- IndexedDB plumbing ----
 
 let dbPromise;
 function db() {
   dbPromise ??= new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(DB_NAME, 2);
     req.onupgradeneeded = () => {
       const d = req.result;
       for (const t of TABLES) if (!d.objectStoreNames.contains(t)) d.createObjectStore(t, { keyPath: 'id' });
       if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta', { keyPath: 'key' });
+      // v2: changes waiting for family sync, one entry per record ('books:<id>').
+      if (!d.objectStoreNames.contains('outbox')) d.createObjectStore('outbox', { keyPath: 'k' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -52,20 +63,37 @@ async function readAll(table) {
   });
 }
 
-// changes: {books: [...], reads: [...], ...} written in one transaction, then mirrored.
-async function write(changes) {
-  const tables = Object.keys(changes).filter((t) => changes[t].length);
-  if (!tables.length) return;
-  const d = await db();
-  await new Promise((resolve, reject) => {
-    const tx = d.transaction(tables, 'readwrite');
-    for (const t of tables) for (const item of changes[t]) tx.objectStore(t).put(item);
+function run(d, stores, fill) {
+  return new Promise((resolve, reject) => {
+    const tx = d.transaction(stores, 'readwrite');
+    fill(tx);
     tx.oncomplete = resolve;
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error);
   });
-  for (const t of tables) for (const item of changes[t]) state[t].set(t === 'meta' ? item.key : item.id, item);
+}
+
+// changes: {books: [...], reads: [...], ...} written in one transaction, then mirrored.
+// send: which records go in the outbox: 'all' (a change made here) or a Set of 'table:key'.
+async function write(changes, send = 'all') {
+  const tables = Object.keys(changes).filter((t) => changes[t].length);
+  if (!tables.length) return;
+  let queued = 0;
+  await run(await db(), [...tables, 'outbox'], (tx) => {
+    for (const t of tables) {
+      for (const item of changes[t]) {
+        tx.objectStore(t).put(item);
+        const k = `${t}:${keyOf(t, item)}`;
+        if (send === 'all' || send.has(k)) {
+          tx.objectStore('outbox').put({ k, t, id: keyOf(t, item) });
+          queued++;
+        }
+      }
+    }
+  });
+  for (const t of tables) for (const item of changes[t]) state[t].set(keyOf(t, item), item);
   changed();
+  if (queued) outboxListeners.forEach((fn) => fn());
 }
 
 export async function load() {
@@ -159,6 +187,63 @@ export async function setSubjects(list) {
   await write({ meta: [{ key: 'subjects', value: list, updatedAt: nowIso() }] });
 }
 
+// ---- family sync: the outbox ----
+
+// Puts every record in the outbox (when this phone joins family sync).
+export async function queueAll() {
+  await run(await db(), ['outbox'], (tx) => {
+    for (const t of [...TABLES, 'meta']) {
+      for (const k of state[t].keys()) tx.objectStore('outbox').put({ k: `${t}:${k}`, t, id: k });
+    }
+  });
+  outboxListeners.forEach((fn) => fn());
+}
+
+// The next records to send: [{table, rec}], at most `limit` records or about `maxChars` of JSON.
+export async function outbox(limit, maxChars) {
+  const batch = [];
+  const stale = [];
+  let chars = 0;
+  for (const e of await readAll('outbox')) {
+    const rec = state[e.t]?.get(e.id);
+    if (!rec) {
+      stale.push(e.k);
+      continue;
+    }
+    const size = JSON.stringify(rec).length;
+    if (batch.length && (batch.length >= limit || chars + size > maxChars)) break;
+    batch.push({ table: e.t, rec });
+    chars += size;
+  }
+  if (stale.length) await run(await db(), ['outbox'], (tx) => stale.forEach((k) => tx.objectStore('outbox').delete(k)));
+  return batch;
+}
+
+// Takes sent records out of the outbox, unless they changed again while being sent.
+export async function sent(batch) {
+  await run(await db(), ['outbox'], (tx) => {
+    for (const { table, rec } of batch) {
+      if (state[table].get(keyOf(table, rec)) === rec) tx.objectStore('outbox').delete(`${table}:${keyOf(table, rec)}`);
+    }
+  });
+}
+
+export async function outboxSize() {
+  const d = await db();
+  return new Promise((resolve, reject) => {
+    const req = d.transaction('outbox').objectStore('outbox').count();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// Records from another phone (sync or backup), merged by the rules in merge.js.
+export async function mergeIn(data, { fromSync = false } = {}) {
+  const { out, dirty, counts } = planMerge(state, data, { now: nowIso(), fromSync });
+  await write(out, dirty);
+  return counts;
+}
+
 // ---- backup ----
 
 export function exportData() {
@@ -173,40 +258,12 @@ export function exportData() {
   };
 }
 
-// Merges a backup into this phone. Same id: newer updatedAt wins.
-// A book typed in on both phones (no ISBN, same title) becomes one book, and the
-// same reader+book+date read logged on both phones is kept once.
+// Merges a backup into this phone (rules in merge.js).
 export async function importData(data) {
   if (data?.app !== 'reading-log' || !Array.isArray(data.books) || !Array.isArray(data.reads)) {
     throw new Error('독서기록 백업 파일이 아니에요.');
   }
-  const newer = (map, key, item) => !map.get(key) || String(item.updatedAt) > String(map.get(key).updatedAt);
-  const out = { books: [], reads: [], readers: [], meta: [] };
-
-  const byTitle = new Map(books().filter((b) => !b.isbn).map((b) => [normTitle(b.title), b.id]));
-  const remap = new Map();
-  for (const b of data.books) {
-    if (!b?.id || typeof b.title !== 'string') continue;
-    const twin = !b.isbn && !state.books.has(b.id) && byTitle.get(normTitle(b.title));
-    if (twin && !b.deletedAt) { remap.set(b.id, twin); continue; }
-    if (newer(state.books, b.id, b)) out.books.push(b);
-  }
-  for (const p of data.readers || []) if (p?.id && newer(state.readers, p.id, p)) out.readers.push(p);
-  for (const m of data.meta || []) if (m?.key && newer(state.meta, m.key, m)) out.meta.push(m);
-
-  const seen = new Set(alive(state.reads).map((r) => `${r.bookId}|${r.readerId}|${r.date}`));
-  for (const r of data.reads) {
-    if (!r?.id || !r.bookId || !/^\d{4}-\d{2}-\d{2}$/.test(r.date || '')) continue;
-    const read = remap.has(r.bookId) ? { ...r, bookId: remap.get(r.bookId) } : r;
-    const sig = `${read.bookId}|${read.readerId}|${read.date}`;
-    if (!state.reads.has(read.id) && !read.deletedAt && seen.has(sig)) continue;
-    if (newer(state.reads, read.id, read)) {
-      out.reads.push(read);
-      seen.add(sig);
-    }
-  }
-  await write(out);
-  return { books: out.books.length, reads: out.reads.length, readers: out.readers.length };
+  return mergeIn(data);
 }
 
 export async function requestPersist() {

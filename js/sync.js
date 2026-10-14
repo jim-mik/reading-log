@@ -99,11 +99,18 @@ function newKey() {
 
 export async function connect(text) {
   const { url, key: given } = parseLink(text);
-  const key = given || newKey();
+  let key = given;
+  if (!key) {
+    // The first phone keeps its new key before asking: if Google's reply gets lost after the key was
+    // saved on the sheet, pressing 연결 again sends the same key instead of being told "taken".
+    const pending = settings().syncPending;
+    key = pending?.url === url ? pending.key : newKey();
+    updateSettings({ syncPending: { url, key } });
+  }
   const res = await call(url, { op: 'claim', key });
   updateSettings({
     syncUrl: url, syncKey: key, syncDevice: settings().syncDevice || uid('d'), syncCursor: 0, syncLogId: '',
-    syncAt: '', syncError: '', syncSheetUrl: res.sheetUrl || '',
+    syncAt: '', syncError: '', syncSheetUrl: res.sheetUrl || '', syncPending: null,
   });
   await store.queueAll(); // everything this phone has goes to the sheet
   return syncNow();

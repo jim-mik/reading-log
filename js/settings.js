@@ -20,6 +20,7 @@ const DEFAULTS = {
   syncAt: '',
   syncError: '',
   syncSheetUrl: '',
+  syncPending: null, // {url, key} while the first phone is connecting
 };
 
 let cache;

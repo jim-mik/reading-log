@@ -26,6 +26,11 @@ It installs to the home screen on Galaxy S25/S26 through Chrome's "홈 화면에
 - **Stats**: this week / month / year / all-time totals; stacked columns by week, month or year, split by person,
   language, subject, difficulty or read-aloud; counted in books, pages or words; most-read books;
   progress through the shelf for each person.
+- **Notes** (노트 tab, and on each book's page): what a child learned, from a book or not. Text with #tags, up to
+  4 photos (shrunk to about 1024px), who learned it, page, date, the 누리과정 area (ages 3-5), and a question to ask
+  the child later. Search by word, book title or #tag; tag chips filter. With a Claude key, Claude suggests tags
+  (reusing the family's existing ones), the area and the question, using the child's age from 설정 → 가족.
+  This is step 1 of tracking what each child learned and forgot; recall checks come next.
 - **Family sync** (optional): both parents' phones share one set of records through a Google Sheet, and the sheet
   shows them as readable tables. See below.
 - **Backup**: JSON backup and merge-import (newest edit wins, deletions carry over, the same book or read logged
@@ -72,6 +77,9 @@ How it works:
   can read and change the records, so it should only go to family. To start over with a new key, delete the
   `familyKey` script property (Apps Script → 프로젝트 설정 → 스크립트 속성) and connect again.
 - After changing the script, update it with 배포 관리 → 수정 → 새 버전. 새 배포 would create a new URL.
+- The script reports a protocol number. Protocol 1 (before notes) silently drops tables it doesn't know, so phones
+  send notes and photos only to protocol 2 or later; until then they wait in the outbox and 설정 asks for the new
+  script. Notes and photos also appear on the sheet's 노트 tab (photos only as a count).
 - Why not Notion or Firebase: Notion's API can't be called from a browser app (no CORS), so it would need a
   separate server. Firebase would give live updates, but needs a Google login on each phone and its own console
   setup, and the records can't be read as a spreadsheet.
@@ -91,11 +99,12 @@ js/app.js                                 entry: tabs and rendering
 js/store.js                               IndexedDB data, sync outbox, backup export
 js/merge.js                               merge rules for sync and backup import
 js/sync.js                                family sync with the Google Sheet
+js/notes.js                               note tags, search, 누리과정 areas
 js/lookup.js                              book catalogs (Kakao, NL, Open Library, Google)
 js/ai.js                                  Claude: read a cover photo / classify a book
 js/media.js                               photos, barcode detection
 js/stats.js, js/chart.js                  aggregation, SVG stacked-column chart
-js/views/*.js                             home, shelf, stats, settings, editor, book detail, scanner
+js/views/*.js                             home, shelf, notes, stats, settings, editor, book detail, scanner
 sync/apps-script.js                       the Google Apps Script sync server (pasted into the family's sheet)
 ```
 
@@ -103,7 +112,7 @@ sync/apps-script.js                       the Google Apps Script sync server (pa
 
 ```
 python3 -m http.server 8765        # then open http://localhost:8765
-node --test tests/*.test.js        # unit tests: dates, ISBN, levels, stats, catalog merge, sync
+node --test tests/*.test.js        # unit tests: dates, ISBN, levels, stats, catalog merge, sync, notes
 ```
 
 `tests/sync.test.js` runs the merge rules, and `sync/apps-script.js` on an in-memory fake of Google Sheets

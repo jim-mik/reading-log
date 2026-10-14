@@ -87,7 +87,7 @@ h1, h2, h3, h4, p { margin: 0; }
   height: calc(var(--tabs-h) + var(--safe-b));
   padding-bottom: var(--safe-b);
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   background: var(--surface);
   border-top: 1px solid var(--border);
   z-index: 10;
@@ -344,7 +344,11 @@ ol.top li .row-side { color: var(--text-2); }
 .table-view th:first-child { text-align: left; }
 
 /* ---------- settings ---------- */
+.person-block { display: flex; flex-direction: column; gap: 6px; }
 .person { display: flex; align-items: center; gap: 8px; }
+label.birth { flex-direction: row; align-items: center; gap: 8px; padding-left: 26px; }
+label.birth span { flex: none; }
+label.birth .input { flex: 1; min-width: 0; }
 .person .input { flex: 1; }
 .person .select { width: 92px; flex: none; }
 .key-field { display: flex; flex-direction: column; gap: 6px; padding-top: 6px; }
@@ -485,3 +489,23 @@ ol.top li .row-side { color: var(--text-2); }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+/* notes */
+.note-row { align-items: flex-start; }
+.note-thumb { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; flex: none; }
+.note-text { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.tag-inline, .badge.tag { color: var(--accent); font-weight: 600; }
+.chip-n { font-size: 12px; color: var(--muted); margin-left: 4px; }
+.chip[aria-pressed="true"] .chip-n { color: inherit; }
+.chip.suggested { border-style: dashed; border-color: var(--accent); color: var(--accent); }
+textarea.input { min-height: 104px; padding: 12px 14px; line-height: 1.5; resize: vertical; font: inherit; }
+.tag-input { min-height: 40px; }
+.photos { display: flex; flex-wrap: wrap; gap: 10px; }
+.photos:empty { display: none; }
+.photo { position: relative; }
+.photo img { width: 76px; height: 76px; object-fit: cover; border-radius: 8px; display: block; }
+.photo .chip-x { position: absolute; top: -8px; right: -8px; background: var(--surface); border: 1px solid var(--border); border-radius: 50%; }
+.picked { display: flex; align-items: center; gap: 10px; }
+.picked-title { flex: 1; min-width: 0; font-weight: 600; }
+.page.viewer { background: #000; display: flex; align-items: center; justify-content: center; }
+.page.viewer img { max-width: 100%; max-height: 100%; object-fit: contain; }

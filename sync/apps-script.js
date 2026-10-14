@@ -12,23 +12,26 @@
 // the phones settle conflicts themselves (newer updatedAt wins). The readable 독서기록 and 책장 tabs
 // are rebuilt from the log after each change and when the spreadsheet is opened.
 
-const PROTOCOL = 1;
+const PROTOCOL = 2; // 2: notes and photos
 const LOG = '_log';
 const LOG_HEAD = ['받은 시각', '폰', '종류', 'id', 'updatedAt', '삭제', '요약', '기록'];
 const BODY_COL = 8; // the record's JSON starts here, split over as many cells as it needs
 const CELL = 45000; // a cell holds at most 50,000 characters
 const PULL_ROWS = 2000; // log rows read per request
 const PULL_CHARS = 3000000; // characters sent back per response
-const TABLES = ['books', 'reads', 'readers', 'meta'];
+const TABLES = ['books', 'reads', 'readers', 'meta', 'notes', 'photos'];
 // Fields copied to the 요약 column, enough to rebuild the readable tabs without the full JSON.
 const SUMMARY = {
   books: ['title', 'authors', 'publisher', 'isbn', 'lang', 'subject', 'level', 'pages', 'words'],
   reads: ['bookId', 'readerId', 'date', 'aloud'],
   readers: ['name', 'kind', 'slot'],
   meta: ['value'],
+  notes: ['bookId', 'readerIds', 'date', 'page', 'text', 'tags', 'area', 'question'],
+  photos: ['noteId'],
 };
 const LANG = { ko: '한국어', en: '영어', etc: '기타' };
 const LEVEL = { 1: '1 그림책', 2: '2 쉬운 읽기책', 3: '3 초기 챕터북', 4: '4 챕터북·동화', 5: '5 소설·지식책' };
+const AREA = { body: '신체운동·건강', comm: '의사소통', social: '사회관계', art: '예술경험', nature: '자연탐구' };
 const DEFAULT_SUBJECTS = [
   { key: 'lit', label: '문학·동화' }, { key: 'lang', label: '언어(한글·영어)' }, { key: 'math', label: '수학' },
   { key: 'sci', label: '과학' }, { key: 'soc', label: '사회·역사' }, { key: 'comic', label: '학습만화' },
@@ -168,7 +171,7 @@ function refreshTables() {
 }
 
 function buildTables(ss) {
-  const latest = { books: {}, reads: {}, readers: {}, meta: {} };
+  const latest = { books: {}, reads: {}, readers: {}, meta: {}, notes: {}, photos: {} };
   const sheet = ss.getSheetByName(LOG);
   if (sheet && sheet.getLastRow() > 1) {
     for (const v of sheet.getRange(2, 1, sheet.getLastRow() - 1, 7).getValues()) {
@@ -212,12 +215,21 @@ function buildTables(ss) {
     s.who[r.readerId] = true;
   }
   const shelf = Object.keys(books).map((id) => books[id]).sort((a, b) => String(a.title).localeCompare(String(b.title), 'ko'));
+  const anyName = (id) => (latest.readers[id] ? latest.readers[id].s.name : '');
+  const anyTitle = (id) => (latest.books[id] ? latest.books[id].s.title : '');
   writeTable(ss, '책장', ['제목', '지은이', '출판사', 'ISBN', '언어', '과목', '난이도', '쪽수', '단어 수', '읽은 횟수', '처음 읽은 날', '마지막 읽은 날', '읽은 사람'],
     shelf.map((b) => {
       const s = per[b.id];
       const who = s ? Object.keys(s.who).sort((x, y) => (readers[x].slot || 0) - (readers[y].slot || 0)).map((id) => readers[id].name) : [];
       return bookCols(b).concat(s ? [s.n, s.first, s.last, who.join(', ')] : [0, '', '', '']);
     }));
+
+  const pics = {};
+  for (const p of live('photos')) pics[p.noteId] = (pics[p.noteId] || 0) + 1;
+  const notes = live('notes').sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  writeTable(ss, '노트', ['날짜', '누가', '책', '쪽', '내용', '태그', '영역', '확인 질문', '사진'],
+    notes.map((n) => [n.date, (n.readerIds || []).map(anyName).join(', '), n.bookId ? anyTitle(n.bookId) : '', n.page || '',
+      n.text, (n.tags || []).map((t) => `#${t}`).join(' '), AREA[n.area] || '', n.question || '', pics[n.id] || '']));
 }
 
 function writeTable(ss, name, head, rows) {

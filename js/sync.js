@@ -8,7 +8,10 @@ import * as store from './store.js';
 import { settings, updateSettings } from './settings.js';
 import { uid, nowIso, debounce } from './util.js';
 
-const PROTOCOL = 1;
+const PROTOCOL = 2;
+// Tables a protocol-1 server keeps (it silently skips others): notes wait until the sheet's script is updated.
+const V1_TABLES = ['books', 'reads', 'readers', 'meta'];
+const sendable = () => (settings().syncProtocol >= 2 ? null : V1_TABLES);
 const PUSH_LIMIT = 150; // records per request
 const PUSH_CHARS = 2000000; // about 2 MB of JSON per request
 const EVERY = 3 * 60 * 1000;
@@ -28,6 +31,10 @@ function setStatus(state, message = '') {
   status = { state, message };
   statusListeners.forEach((fn) => fn(status));
 }
+
+// Notes waiting because the sheet still runs the protocol-1 script.
+export const OLD_SCRIPT = '노트를 시트로 보내려면 구글 시트의 Apps Script 코드를 새 버전으로 바꿔 주세요 (설정 → 가족 동기화 → 처음 설정하는 방법의 3번 주소, 배포 관리 → 수정 → 새 버전).';
+export const needsNewScript = () => linked() && !!settings().syncNotesWaiting;
 
 // Something to show on the home screen when sync has been failing for a day.
 export function problem() {
@@ -68,7 +75,6 @@ async function call(url, body) {
     throw new SyncError(`동기화 서버가 이상한 응답을 보냈어요 (${res.status}). 주소가 맞는지 확인해 주세요.`);
   }
   if (!data.ok) throw new SyncError(ERRORS[data.error] || `동기화 서버 오류: ${data.message || data.error}`);
-  if (data.protocol < PROTOCOL) throw new SyncError(ERRORS['bad-request']);
   return data;
 }
 
@@ -110,14 +116,17 @@ export async function connect(text) {
   const res = await call(url, { op: 'claim', key });
   updateSettings({
     syncUrl: url, syncKey: key, syncDevice: settings().syncDevice || uid('d'), syncCursor: 0, syncLogId: '',
-    syncAt: '', syncError: '', syncSheetUrl: res.sheetUrl || '', syncPending: null,
+    syncAt: '', syncError: '', syncSheetUrl: res.sheetUrl || '', syncPending: null, syncProtocol: res.protocol || 1,
   });
   await store.queueAll(); // everything this phone has goes to the sheet
   return syncNow();
 }
 
 export function disconnect() {
-  updateSettings({ syncUrl: '', syncKey: '', syncCursor: 0, syncLogId: '', syncAt: '', syncError: '', syncSheetUrl: '' });
+  updateSettings({
+    syncUrl: '', syncKey: '', syncCursor: 0, syncLogId: '', syncAt: '', syncError: '', syncSheetUrl: '', syncProtocol: 0,
+    syncNotesWaiting: false,
+  });
   setStatus('idle');
 }
 
@@ -139,7 +148,7 @@ export function syncNow() {
         again = false;
         await round();
       } while (again);
-      updateSettings({ syncAt: nowIso(), syncError: '' });
+      updateSettings({ syncAt: nowIso(), syncError: '', syncNotesWaiting: !!sendable() && (await store.outboxSize()) > 0 });
       setStatus('ok');
     } catch (e) {
       if (!(e instanceof SyncError) || !e.offline) updateSettings({ syncError: e.message });
@@ -154,7 +163,7 @@ export function syncNow() {
 async function round() {
   for (let i = 0; i < 500; i++) {
     const s = settings();
-    const batch = await store.outbox(PUSH_LIMIT, PUSH_CHARS);
+    const batch = await store.outbox(PUSH_LIMIT, PUSH_CHARS, sendable());
     const res = await call(s.syncUrl, { op: 'sync', key: s.syncKey, device: s.syncDevice, since: s.syncCursor, push: batch });
     await store.sent(batch);
 
@@ -165,12 +174,14 @@ async function round() {
       continue;
     }
     if (res.rows.length) {
-      const data = { books: [], reads: [], readers: [], meta: [] };
+      const data = { books: [], reads: [], readers: [], meta: [], notes: [], photos: [] };
       for (const { table, rec } of res.rows) data[table]?.push(rec);
       await store.mergeIn(data, { fromSync: true });
     }
-    updateSettings({ syncCursor: res.cursor, syncLogId: res.logId, syncSheetUrl: res.sheetUrl || s.syncSheetUrl });
-    if (!res.more && !(await store.outboxSize())) return;
+    updateSettings({
+      syncCursor: res.cursor, syncLogId: res.logId, syncSheetUrl: res.sheetUrl || s.syncSheetUrl, syncProtocol: res.protocol || 1,
+    });
+    if (!res.more && !(await store.outboxSize(sendable()))) return;
   }
 }
 

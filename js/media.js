@@ -48,6 +48,13 @@ export async function preparePhoto(file) {
   return { bitmap, base64, thumb };
 }
 
+// A photo for a note: about 1024px (roughly 100-200 KB, small enough to sync through the
+// Google Sheet) plus a 240px thumbnail for lists.
+export async function notePhoto(file) {
+  const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  return { data: toCanvas(bitmap, 1024).toDataURL('image/jpeg', 0.7), thumb: toCanvas(bitmap, 240).toDataURL('image/jpeg', 0.6) };
+}
+
 // Opens the phone camera (or the gallery) and resolves with the chosen file, or null.
 export function pickPhoto({ camera = true } = {}) {
   return new Promise((resolve) => {

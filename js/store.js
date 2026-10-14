@@ -9,7 +9,7 @@ import { DEFAULT_SUBJECTS } from './catalog.js';
 import { planMerge, keyOf } from './merge.js';
 
 const DB_NAME = 'reading-log';
-const TABLES = ['books', 'reads', 'readers'];
+const TABLES = ['books', 'reads', 'readers', 'notes', 'photos'];
 const EPOCH = '1970-01-01T00:00:00.000Z';
 
 // Fixed ids, so two phones that both start from the defaults merge cleanly.
@@ -20,7 +20,9 @@ const DEFAULT_READERS = [
   { id: 'r_dad', name: '아빠', kind: 'parent', slot: 3 },
 ];
 
-export const state = { books: new Map(), reads: new Map(), readers: new Map(), meta: new Map() };
+export const state = {
+  books: new Map(), reads: new Map(), readers: new Map(), notes: new Map(), photos: new Map(), meta: new Map(),
+};
 
 const listeners = new Set();
 export function onChange(fn) {
@@ -40,12 +42,12 @@ export function onOutbox(fn) {
 let dbPromise;
 function db() {
   dbPromise ??= new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 2);
+    const req = indexedDB.open(DB_NAME, 3);
     req.onupgradeneeded = () => {
       const d = req.result;
       for (const t of TABLES) if (!d.objectStoreNames.contains(t)) d.createObjectStore(t, { keyPath: 'id' });
       if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta', { keyPath: 'key' });
-      // v2: changes waiting for family sync, one entry per record ('books:<id>').
+      // v2: changes waiting for family sync, one entry per record ('books:<id>'). v3: notes, photos.
       if (!d.objectStoreNames.contains('outbox')) d.createObjectStore('outbox', { keyPath: 'k' });
     };
     req.onsuccess = () => resolve(req.result);
@@ -168,19 +170,49 @@ export async function removeBook(id) {
   await write({ books: [tomb(state.books.get(id))], reads: rs });
 }
 
-export async function saveReader({ id, name, kind }) {
+export async function saveReader({ id, name, kind, birth }) {
   const now = nowIso();
   const prev = id && state.readers.get(id);
   const used = new Set(readers().map((r) => r.slot));
   let slot = prev?.slot;
   if (slot == null) for (slot = 0; used.has(slot); slot++);
   const reader = { ...(prev || {}), id: id || uid('p'), name, kind, slot, createdAt: prev?.createdAt ?? now, updatedAt: now };
+  if (birth !== undefined) reader.birth = birth; // 'YYYY-MM'
   await write({ readers: [reader] });
   return reader;
 }
 
 export async function removeReader(id) {
   await write({ readers: [tomb(state.readers.get(id))] });
+}
+
+// ---- notes: what a child learned, with #tags; photos are their own records so that
+// editing a note's text doesn't send its photos again ----
+
+export const notes = () => alive(state.notes).sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+export const notesOfBook = (bookId) => notes().filter((n) => n.bookId === bookId);
+export const photosOf = (noteId) => alive(state.photos).filter((p) => p.noteId === noteId)
+  .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+const NOTE_FIELDS = ['bookId', 'readerIds', 'date', 'page', 'text', 'tags', 'area', 'question'];
+
+// add: [{data, thumb}] new photos; remove: ids of photos to drop.
+export async function saveNote(fields, { id, add = [], remove = [] } = {}) {
+  const now = nowIso();
+  const prev = id && state.notes.get(id);
+  const note = { ...(prev || {}), id: id || uid('n'), createdAt: prev?.createdAt ?? now, updatedAt: now };
+  for (const k of NOTE_FIELDS) if (k in fields) note[k] = fields[k];
+  const photos = add.map(({ data, thumb }) => ({ id: uid('ph'), noteId: note.id, data, thumb, createdAt: now, updatedAt: now }));
+  for (const pid of remove) if (state.photos.get(pid)) photos.push(photoTomb(state.photos.get(pid)));
+  await write({ notes: [note], photos });
+  return note;
+}
+
+// A deleted photo keeps no picture, so the deletion doesn't upload it again.
+const photoTomb = (p) => ({ id: p.id, noteId: p.noteId, createdAt: p.createdAt, deletedAt: nowIso(), updatedAt: nowIso() });
+
+export async function removeNote(id) {
+  await write({ notes: [tomb(state.notes.get(id))], photos: photosOf(id).map(photoTomb) });
 }
 
 export async function setSubjects(list) {
@@ -200,11 +232,13 @@ export async function queueAll() {
 }
 
 // The next records to send: [{table, rec}], at most `limit` records or about `maxChars` of JSON.
-export async function outbox(limit, maxChars) {
+// tables: only these tables (an older sync server doesn't know notes), or null for all.
+export async function outbox(limit, maxChars, tables = null) {
   const batch = [];
   const stale = [];
   let chars = 0;
   for (const e of await readAll('outbox')) {
+    if (tables && !tables.includes(e.t)) continue;
     const rec = state[e.t]?.get(e.id);
     if (!rec) {
       stale.push(e.k);
@@ -228,13 +262,8 @@ export async function sent(batch) {
   });
 }
 
-export async function outboxSize() {
-  const d = await db();
-  return new Promise((resolve, reject) => {
-    const req = d.transaction('outbox').objectStore('outbox').count();
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+export async function outboxSize(tables = null) {
+  return (await readAll('outbox')).filter((e) => !tables || tables.includes(e.t)).length;
 }
 
 // Records from another phone (sync or backup), merged by the rules in merge.js.
@@ -254,6 +283,8 @@ export function exportData() {
     books: [...state.books.values()],
     reads: [...state.reads.values()],
     readers: [...state.readers.values()],
+    notes: [...state.notes.values()],
+    photos: [...state.photos.values()],
     meta: [...state.meta.values()],
   };
 }

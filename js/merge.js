@@ -8,7 +8,7 @@
 
 import { normTitle } from './util.js';
 
-const TABLES = ['books', 'readers', 'meta', 'reads'];
+const TABLES = ['books', 'readers', 'meta', 'reads', 'notes', 'photos'];
 export const keyOf = (t, x) => (t === 'meta' ? x?.key : x?.id);
 const live = (x) => x && !x.deletedAt;
 const sigOf = (r) => `${r.bookId}|${r.readerId}|${r.date}`;
@@ -20,6 +20,8 @@ function valid(t, x) {
   if (typeof k !== 'string' || !k) return false;
   if (t === 'books') return typeof x.title === 'string';
   if (t === 'reads') return typeof x.bookId === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x.date || '');
+  if (t === 'notes') return typeof x.text === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x.date || '');
+  if (t === 'photos') return typeof x.noteId === 'string' && (!!x.deletedAt || typeof x.data === 'string');
   return true;
 }
 
@@ -28,7 +30,7 @@ function valid(t, x) {
 // changes itself go back; records from a backup file are all sent.
 // Returns {out: {table: [records to write]}, dirty: Set of 'table:key' to send, counts}.
 export function planMerge(state, data, { now, fromSync = false }) {
-  const out = { books: new Map(), reads: new Map(), readers: new Map(), meta: new Map() };
+  const out = Object.fromEntries(TABLES.map((t) => [t, new Map()]));
   const dirty = new Set();
   const cur = (t, k) => out[t].get(k) ?? state[t].get(k);
   const put = (t, rec, mine) => {
@@ -42,7 +44,7 @@ export function planMerge(state, data, { now, fromSync = false }) {
   };
 
   // 1. Same id: newer wins. A pull can hold several versions of one record; the newest stays.
-  const accepted = { books: new Map(), reads: new Map(), readers: new Map(), meta: new Map() };
+  const accepted = Object.fromEntries(TABLES.map((t) => [t, new Map()]));
   for (const t of TABLES) {
     for (const x of data[t] || []) {
       if (!x || !valid(t, x)) continue;
@@ -70,7 +72,7 @@ export function planMerge(state, data, { now, fromSync = false }) {
     }
   }
 
-  // 3. Reads of a merged book move to the book it was merged into.
+  // 3. Reads and notes of a merged book move to the book it was merged into.
   const target = (id) => {
     for (let i = 0; i < 10; i++) {
       const b = cur('books', id);
@@ -87,6 +89,11 @@ export function planMerge(state, data, { now, fromSync = false }) {
     const moved = { ...r, bookId: to, updatedAt: now };
     put('reads', moved, true);
     touched.push(moved);
+  }
+  for (const n of all('notes').values()) {
+    if (!live(n) || !n.bookId) continue;
+    const to = target(n.bookId);
+    if (to !== n.bookId) put('notes', { ...n, bookId: to, updatedAt: now }, true);
   }
 
   // 4. The same reader + book + date twice: keep the first one.
@@ -106,10 +113,10 @@ export function planMerge(state, data, { now, fromSync = false }) {
 
   // Counts for the "합쳤어요" message: incoming records that are still there after the merge.
   const counts = {};
-  for (const t of ['books', 'reads', 'readers']) {
+  for (const t of ['books', 'reads', 'readers', 'notes']) {
     counts[t] = [...accepted[t]].filter(([k, x]) => x.deletedAt || live(out[t].get(k))).length;
   }
   const result = {};
-  for (const t of Object.keys(out)) result[t] = [...out[t].values()];
+  for (const t of TABLES) result[t] = [...out[t].values()];
   return { out: result, dirty, counts };
 }

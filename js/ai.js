@@ -1,10 +1,11 @@
-// Claude reads a book photo (or a short description) and returns structured fields.
-// Optional: only used when a Claude API key is set on this phone. The key stays in
-// this phone's storage and goes only to api.anthropic.com.
+// Claude reads a book photo (or a short description) and returns structured fields, and suggests
+// tags and a recall question for a note. Optional: only used when a Claude API key is set on this
+// phone. The key stays in this phone's storage and goes only to api.anthropic.com.
 
 import { settings } from './settings.js';
 import { subjects } from './store.js';
 import { LEVELS } from './catalog.js';
+import { AREAS } from './notes.js';
 
 // Official Anthropic SDK, loaded only when AI is first used (pinned version).
 const SDK_URL = 'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.129.0/+esm';
@@ -96,20 +97,49 @@ export async function testClaude() {
 
 // image: base64 JPEG (no data: prefix). text: book facts we already know.
 export async function readBook({ image, text }) {
-  const { claudeModel } = settings();
-  const { Anthropic, client } = await connect();
-
   const subs = subjects();
   const content = [];
   if (image) content.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: image } });
   content.push({ type: 'text', text: text || 'Read the book in this photo.' });
+  return structured({ system: system(subs), content, schema: schema(subs.map((s) => s.key)) });
+}
 
+const NOTE_SYSTEM = `You help Korean parents keep notes on what their young child learned, from a book or from daily life.
+You get one note, written by a parent. Return:
+- tags: 1 to 4 short Korean tags naming what was learned (nouns such as 공룡, 초식동물, 색깔, 숫자세기; no "#", no spaces). When a tag from the family's existing tags means the same thing, use that exact tag.
+- area: the 누리과정 area the learning belongs to:
+${AREAS.map((a) => `  ${a.key} = ${a.label}`).join('\n')}
+- question: one short question in Korean that a parent can ask the child a few days later to check they still remember it. Fit it to the child's age; for a 3-year-old keep it very simple, answerable with one word, a number, or by pointing.`;
+
+const NOTE_SCHEMA = {
+  type: 'object',
+  properties: {
+    tags: { type: 'array', items: { type: 'string' } },
+    area: { type: 'string', enum: AREAS.map((a) => a.key) },
+    question: { type: 'string' },
+  },
+  required: ['tags', 'area', 'question'],
+  additionalProperties: false,
+};
+
+// Tags, a 누리과정 area and a recall question for a note. ageMonths may be null.
+export async function suggestNote({ text, bookTitle, ageMonths, knownTags }) {
+  const lines = [`Note: ${text}`];
+  if (bookTitle) lines.push(`Book: ${bookTitle}`);
+  if (ageMonths != null) lines.push(`Child's age: ${Math.floor(ageMonths / 12)} years ${ageMonths % 12} months`);
+  if (knownTags?.length) lines.push(`Existing tags: ${knownTags.join(', ')}`);
+  return structured({ system: NOTE_SYSTEM, content: [{ type: 'text', text: lines.join('\n') }], schema: NOTE_SCHEMA, maxTokens: 2000 });
+}
+
+async function structured({ system: sys, content, schema: outSchema, maxTokens = 8000 }) {
+  const { claudeModel } = settings();
+  const { Anthropic, client } = await connect();
   const params = {
     model: claudeModel,
-    max_tokens: 8000,
-    system: system(subs),
+    max_tokens: maxTokens,
+    system: sys,
     messages: [{ role: 'user', content }],
-    output_config: { effort: 'low', format: { type: 'json_schema', schema: schema(subs.map((s) => s.key)) } },
+    output_config: { effort: 'low', format: { type: 'json_schema', schema: outSchema } },
   };
   // If a safety check declines the request, let the API retry on a suitable model.
   // (Not offered for Haiku.)

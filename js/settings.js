@@ -21,6 +21,9 @@ const DEFAULTS = {
   syncError: '',
   syncSheetUrl: '',
   syncPending: null, // {url, key} while the first phone is connecting
+  syncProtocol: 0, // the sheet script's protocol; 1 doesn't take notes
+  syncNotesWaiting: false,
+  lastNoteReaderIds: [],
 };
 
 let cache;

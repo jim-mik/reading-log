@@ -113,7 +113,9 @@ function syncCard(rerender) {
   }
 
   const line = h('p', { class: 'status' });
+  const notice = h('p', { class: 'banner', hidden: !sync.needsNewScript() }, sync.OLD_SCRIPT);
   const paint = () => {
+    notice.hidden = !sync.needsNewScript();
     const st = sync.syncStatus();
     const s = settings();
     const error = st.state === 'error' || (st.state !== 'busy' && st.state !== 'offline' && s.syncError);
@@ -146,6 +148,7 @@ function syncCard(rerender) {
   card.append(
     h('p', { class: 'hint' }, '이 폰의 기록이 구글 시트로 자동으로 가고, 다른 폰의 기록도 받아 와요. 시트의 "독서기록"·"책장" 탭에서 기록을 표로 볼 수 있어요.'),
     line,
+    notice,
     h('div', { class: 'stack' },
       h('button', { class: 'btn primary', onClick: () => sync.syncNow() }, '지금 동기화'),
       h('button', { class: 'btn', onClick: share }, '다른 폰 연결하기 (연결 코드 보내기)'),
@@ -167,8 +170,8 @@ export function renderSettings(root, { rerender }) {
   // Family
   const people = h('section', { class: 'card' },
     h('h3', null, '가족'),
-    h('p', { class: 'hint' }, '아이 이름으로 바꿔 주세요. 색은 사람마다 고정이에요.'),
-    store.readers().map((r) => h('div', { class: 'person' },
+    h('p', { class: 'hint' }, '아이 이름으로 바꿔 주세요. 색은 사람마다 고정이에요. 아이의 태어난 달을 넣으면 AI가 나이에 맞는 질문을 만들어요.'),
+    store.readers().map((r) => h('div', { class: 'person-block' }, h('div', { class: 'person' },
       h('span', { class: 'dot big', style: `background:${readerColor(r)}` }),
       h('input', {
         class: 'input', value: r.name, 'aria-label': '이름',
@@ -182,7 +185,11 @@ export function renderSettings(root, { rerender }) {
           if (!confirm(n ? `${r.name}을(를) 빼면 기록 ${n}건이 통계에서 빠져요. 뺄까요?` : `${r.name}을(를) 뺄까요?`)) return;
           await store.removeReader(r.id);
         },
-      }, icon('trash', 20)))),
+      }, icon('trash', 20))),
+      r.kind === 'child' && h('label', { class: 'birth' }, h('span', null, '태어난 달'), h('input', {
+        class: 'input', type: 'month', value: r.birth || '', max: todayStr().slice(0, 7), 'aria-label': `${r.name} 태어난 달`,
+        onChange: (e) => store.saveReader({ ...r, birth: e.target.value }),
+      })))),
     h('button', {
       class: 'link', onClick: () => store.saveReader({ name: `가족 ${store.readers().length + 1}`, kind: 'child' }),
     }, icon('plus', 16), '가족 추가'));
@@ -244,7 +251,7 @@ export function renderSettings(root, { rerender }) {
       select(MODELS.map((m) => ({ key: m.id, label: m.label })), settings().claudeModel, (v) => updateSettings({ claudeModel: v }), '모델')),
     h('label', { class: 'toggle' },
       h('input', { type: 'checkbox', checked: settings().aiAuto !== false, onChange: (e) => updateSettings({ aiAuto: e.target.checked }) }),
-      h('span', null, '새 책을 찾으면 과목·난이도를 AI가 자동으로 채우기')));
+      h('span', null, 'AI가 자동으로 제안하기 (새 책의 과목·난이도, 노트의 태그·질문)')));
 
   // Backup
   const last = settings().lastBackupAt;
@@ -255,7 +262,7 @@ export function renderSettings(root, { rerender }) {
       if (!file) return;
       try {
         const r = await store.importData(JSON.parse(await file.text()));
-        toast(`합쳤어요: 책 ${r.books}권, 기록 ${r.reads}건, 가족 ${r.readers}명`);
+        toast(`합쳤어요: 책 ${r.books}권, 기록 ${r.reads}건, 가족 ${r.readers}명${r.notes ? `, 노트 ${r.notes}개` : ''}`);
       } catch (err) {
         toast(err instanceof SyntaxError ? '백업 파일을 읽을 수 없어요.' : err.message);
       }

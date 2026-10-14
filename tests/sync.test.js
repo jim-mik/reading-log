@@ -6,9 +6,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { planMerge } from '../js/merge.js';
 import { loadServer } from './fake-apps-script.js';
+import { tagsIn, allTags, splitTags, matches, tagCounts, ageMonths } from '../js/notes.js';
 
 const KEY = 'k'.repeat(32);
-const emptyState = () => ({ books: new Map(), reads: new Map(), readers: new Map(), meta: new Map() });
+const emptyState = () => ({ books: new Map(), reads: new Map(), readers: new Map(), meta: new Map(), notes: new Map(), photos: new Map() });
 const book = (id, title, u = 'T1', extra = {}) => ({ id, title, isbn: '', updatedAt: u, createdAt: u, ...extra });
 const read = (id, bookId, readerId, date, u = 'T1') => ({ id, bookId, readerId, date, aloud: false, updatedAt: u, createdAt: u });
 
@@ -32,7 +33,7 @@ test('same id: the newer version wins, an older one is ignored', () => {
 test('a backup import sends everything it adds', () => {
   const r = planMerge(emptyState(), { books: [book('b1', 'A')], reads: [read('r1', 'b1', 'r_kid1', '2026-10-01')] }, { now: 'T9' });
   assert.deepEqual([...r.dirty].sort(), ['books:b1', 'reads:r1']);
-  assert.deepEqual(r.counts, { books: 1, reads: 1, readers: 0 });
+  assert.deepEqual(r.counts, { books: 1, reads: 1, readers: 0, notes: 0 });
 });
 
 test('the same title typed on two phones becomes one book on both, with the reads moved and deduplicated', () => {
@@ -58,7 +59,7 @@ test('the same title typed on two phones becomes one book on both, with the read
     assert.deepEqual(liveReads, ['r_a:b_aaa', 'r_b2:b_aaa'], 'reads moved; the read logged first stays');
   }
   assert.ok(toA.dirty.has('books:b_zzz') && toA.dirty.has('reads:r_b2') && toA.dirty.has('reads:r_b'), 'phone A sends what it changed');
-  assert.deepEqual(toA.counts, { books: 0, reads: 1, readers: 0 }, 'message counts what is still there');
+  assert.deepEqual(toA.counts, { books: 0, reads: 1, readers: 0, notes: 0 }, 'message counts what is still there');
 });
 
 test('the book added first stays, even with the larger id', () => {
@@ -94,6 +95,39 @@ test('invalid records are skipped', () => {
     meta: [{ value: 1 }],
   }, { now: 'T1' });
   assert.equal(r.dirty.size, 0);
+});
+
+test('notes and photos merge like other records, and follow a merged book', () => {
+  const st = emptyState();
+  st.books.set('b_a', book('b_a', 'X'));
+  st.books.set('b_z', book('b_z', 'X', 'T2', { deletedAt: 'T2', mergedInto: 'b_a' }));
+  const note = { id: 'n1', bookId: 'b_z', readerIds: ['r_kid1'], date: '2026-10-14', text: '#공룡 뿔 3개', tags: ['공룡'], updatedAt: 'T3', createdAt: 'T3' };
+  const r = planMerge(st, {
+    notes: [note, { id: 'n_bad', text: 'no date' }],
+    photos: [{ id: 'p1', noteId: 'n1', data: 'data:image/jpeg;base64,AAA', updatedAt: 'T3', createdAt: 'T3' },
+      { id: 'p2', noteId: 'n1', deletedAt: 'T4', updatedAt: 'T4', createdAt: 'T3' }, { id: 'p3', noteId: 'n1', updatedAt: 'T3' }],
+  }, { now: 'T5', fromSync: true });
+  assert.equal(r.out.notes.length, 1);
+  assert.equal(r.out.notes[0].bookId, 'b_a', 'the note moved to the book it was merged into');
+  assert.ok(r.dirty.has('notes:n1'));
+  assert.deepEqual(r.out.photos.map((p) => p.id).sort(), ['p1', 'p2'], 'a deleted photo needs no picture; a live one does');
+  assert.equal(r.counts.notes, 1);
+});
+
+test('note tags and search', () => {
+  assert.deepEqual(tagsIn('트리케라톱스는 뿔이 3개 #공룡 #초식_동물 #공룡'), ['공룡', '초식_동물']);
+  assert.deepEqual(allTags('비가 와요 #날씨', ['#물', '구름!', '날씨']), ['날씨', '물', '구름']);
+  assert.deepEqual(splitTags('a #b c'), [{ text: 'a ' }, { tag: 'b' }, { text: ' c' }]);
+  const n = { text: '식물은 햇빛으로 양분을 만든다', tags: ['광합성', '식물'], page: '12', question: '' };
+  assert.ok(matches(n, '햇빛 양분'));
+  assert.ok(matches(n, '#광합'), 'a # word matches the start of a tag');
+  assert.ok(!matches(n, '#햇빛'), 'a # word only looks at tags');
+  assert.ok(matches(n, '똑똑한', '똑똑한 식물 이야기'), 'the book title is searched');
+  assert.ok(matches(n, ''));
+  assert.ok(!matches(n, '공룡'));
+  assert.deepEqual(tagCounts([{ tags: ['b', 'a'] }, { tags: ['a'] }]), [['a', 2], ['b', 1]]);
+  assert.equal(ageMonths('2023-05', new Date(2026, 9, 14)), 41);
+  assert.equal(ageMonths('', new Date()), null);
 });
 
 // ---------- server ----------
@@ -223,6 +257,29 @@ test('server: a script made at script.google.com makes its own sheet once and ke
   assert.deepEqual(log[1].slice(1, 4), ['민준', '', '구름빵'], 'tabs rebuilt after a change, without opening the sheet');
 });
 
+test('server: notes and photos sync, and the 노트 tab lists them', () => {
+  const srv = loadServer();
+  srv.post({ app: 'reading-log', op: 'claim', key: KEY });
+  const photo = `data:image/jpeg;base64,${'P'.repeat(150000)}`;
+  const push = [
+    { table: 'readers', rec: { id: 'r_kid1', name: '민준', slot: 0, updatedAt: 'T1' } },
+    { table: 'books', rec: book('b_1', '공룡 백과') },
+    { table: 'notes', rec: { id: 'n1', bookId: 'b_1', readerIds: ['r_kid1'], date: '2026-10-14', page: '12', text: '트리케라톱스는 뿔이 3개 #공룡',
+      tags: ['공룡', '뿔'], area: 'nature', question: '트리케라톱스 뿔은 몇 개?', updatedAt: 'T1', createdAt: 'T1' } },
+    { table: 'notes', rec: { id: 'n2', bookId: '', readerIds: ['r_kid1'], date: '2026-10-13', text: '-빨강 파랑 구분', tags: [], updatedAt: 'T1', createdAt: 'T1' } },
+    { table: 'photos', rec: { id: 'p1', noteId: 'n1', data: photo, thumb: 'data:image/jpeg;base64,T', updatedAt: 'T1', createdAt: 'T1' } },
+  ];
+  const a = srv.post({ app: 'reading-log', op: 'sync', key: KEY, device: 'd_a', since: 0, push });
+  assert.equal(a.protocol, 2);
+  const b = srv.post({ app: 'reading-log', op: 'sync', key: KEY, device: 'd_b', since: 0, push: [] });
+  assert.deepEqual(b.rows.map((r) => r.table), ['readers', 'books', 'notes', 'notes', 'photos']);
+  assert.equal(b.rows[4].rec.data, photo, 'the photo comes back whole');
+  const tab = srv.ss.getSheetByName('노트').rows;
+  assert.deepEqual(tab[0], ['날짜', '누가', '책', '쪽', '내용', '태그', '영역', '확인 질문', '사진']);
+  assert.deepEqual(tab[1].slice(1), ['민준', '공룡 백과', 12, '트리케라톱스는 뿔이 3개 #공룡', '#공룡 #뿔', '자연탐구', '트리케라톱스 뿔은 몇 개?', 1]);
+  assert.equal(tab[2][4], '-빨강 파랑 구분', 'a leading minus stays text');
+});
+
 // ---------- two phones through the server ----------
 
 // A tiny model of the app's store (ids, tombstones, outbox) around the real merge and server.
@@ -246,7 +303,7 @@ function phone(name, srv) {
         outbox.clear();
         const res = srv.post({ app: 'reading-log', op: 'sync', key: KEY, device: name, since: cursor, push });
         assert.equal(res.ok, true);
-        const data = { books: [], reads: [], readers: [], meta: [] };
+        const data = { books: [], reads: [], readers: [], meta: [], notes: [], photos: [] };
         for (const r of res.rows) data[r.table].push(r.rec);
         const { out, dirty } = planMerge(st, data, { now: now(), fromSync: true });
         apply(st, out);

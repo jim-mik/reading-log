@@ -1,9 +1,10 @@
-// One book: details, who read it, every reading record.
+// One book: details, who read it, every reading record, notes on what was learned.
 
 import { h, clear, prettyDate, fmtNum } from '../util.js';
 import * as store from '../store.js';
 import { openOverlay, closeOverlay, toast, cover, icon, whoChip, langLabel, levelLabel } from '../ui.js';
 import { openEditor } from './editor.js';
+import { openNoteEditor, noteRow } from './notes.js';
 
 export function openBook(id) {
   const el = h('div', { class: 'page book' });
@@ -12,6 +13,7 @@ export function openBook(id) {
     const b = store.getBook(id);
     if (!b) return;
     const rs = store.readsOfBook(id);
+    const ns = store.notesOfBook(id);
     const year = (b.pubDate || '').slice(0, 4);
 
     const whoRows = store.readers().map((r) => {
@@ -67,6 +69,12 @@ export function openBook(id) {
         h('section', { class: 'card' },
           h('h3', null, '누가 읽었나요'),
           h('ul', { class: 'plain' }, whoRows)),
+        h('section', { class: 'card' },
+          h('div', { class: 'h3-row' },
+            h('h3', null, ns.length ? `노트 ${ns.length}개` : '노트'),
+            h('button', { type: 'button', class: 'chip ai', onClick: () => openNoteEditor({ bookId: id }) }, icon('plus', 16), '노트 쓰기')),
+          ns.length ? h('div', { class: 'list' }, ns.map((n) => noteRow(n, { showBook: false })))
+            : h('p', { class: 'muted' }, '이 책에서 배운 것을 적어 두면 나중에 찾을 수 있어요')),
         h('section', { class: 'card' },
           h('h3', null, `읽은 기록 ${rs.length}건`),
           rs.length ? h('ul', { class: 'plain' }, history) : h('p', { class: 'muted' }, '아직 기록이 없어요'))),

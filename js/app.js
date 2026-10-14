@@ -7,12 +7,14 @@ import { registerServiceWorker } from './pwa.js';
 import * as sync from './sync.js';
 import { renderHome } from './views/home.js';
 import { renderShelf } from './views/shelf.js';
+import { renderNotes } from './views/notes.js';
 import { renderStats } from './views/report.js';
 import { renderSettings } from './views/setup.js';
 
 const TABS = [
   { key: 'home', label: '홈', icon: 'home', render: renderHome },
   { key: 'shelf', label: '책장', icon: 'books', render: renderShelf },
+  { key: 'notes', label: '노트', icon: 'bulb', render: renderNotes },
   { key: 'stats', label: '통계', icon: 'chart', render: renderStats },
   { key: 'settings', label: '설정', icon: 'settings', render: renderSettings },
 ];

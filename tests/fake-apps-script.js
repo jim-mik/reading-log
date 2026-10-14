@@ -92,10 +92,12 @@ class Spreadsheet {
 }
 
 // standalone: a script made at script.google.com, with no sheet of its own until it creates one.
-export function loadServer({ standalone = false } = {}) {
-  let ss = standalone ? null : new Spreadsheet();
+// code: another version of the script; from: an earlier server whose sheet and properties to keep
+// (like pasting new code into the same Apps Script project).
+export function loadServer({ standalone = false, code = CODE, from = null } = {}) {
+  let ss = from ? from.ss : standalone ? null : new Spreadsheet();
   let created = 0;
-  const props = new Map();
+  const props = from ? from.props : new Map();
   let uuid = 0;
   const context = vm.createContext({
     SpreadsheetApp: {
@@ -119,7 +121,7 @@ export function loadServer({ standalone = false } = {}) {
       createTextOutput: (text) => ({ text, setMimeType() { return this; } }),
     },
   });
-  vm.runInContext(CODE, context);
+  vm.runInContext(code, context);
   return {
     get ss() { return ss; },
     get created() { return created; },

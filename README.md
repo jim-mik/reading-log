@@ -50,7 +50,9 @@ low effort, structured JSON output, and the server-side refusal fallback (not se
 One parent sets it up once on a PC; the steps are in the app under 설정 → 가족 동기화 → 처음 설정하는 방법:
 
 1. Create an empty Google Sheet, open 확장 프로그램 → Apps Script, and replace `Code.gs` with
-   [`sync/apps-script.js`](sync/apps-script.js).
+   [`sync/apps-script.js`](sync/apps-script.js). If that menu isn't there (phone app, hidden menu bar, an .xlsx file,
+   or a work account), start a new project at script.google.com instead: the script then creates a "독서기록" sheet
+   in My Drive the first time a phone connects.
 2. 배포 → 새 배포 → 웹 앱, run as "나" with access "모든 사용자", then approve the permissions (Google warns that the
    app is unverified, because it is your own script).
 3. Paste the web app URL (`…/exec`) into the app on the first phone and press 연결. That phone then sends its
@@ -64,8 +66,8 @@ How it works:
   cursor. Conflicts are settled on the phones by the same rules as backup import (`js/merge.js`): newer `updatedAt`
   wins; the same title typed on both phones (no ISBN) becomes one book, keeping the one added first; the same
   reader + book + date is kept once.
-- The 독서기록 and 책장 tabs are rebuilt from the log whenever the sheet is opened (menu 독서기록 → 표 새로 고침
-  does it on demand). Editing those tabs does not change the app.
+- The 독서기록 and 책장 tabs are rebuilt from the log after each change and when the sheet is opened (menu
+  독서기록 → 표 새로 고침 does it on demand). Editing those tabs does not change the app.
 - Access is the web app URL plus a random family key that the first phone registers. Anyone with the connection code
   can read and change the records, so it should only go to family. To start over with a new key, delete the
   `familyKey` script property (Apps Script → 프로젝트 설정 → 스크립트 속성) and connect again.

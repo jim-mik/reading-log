@@ -204,6 +204,25 @@ test('server: the readable tabs show the latest live records', () => {
   assert.deepEqual(shelf[2].slice(9), [2, { date: '2026-10-01' }, { date: '2026-10-05' }, '민준, 엄마']);
 });
 
+test('server: a script made at script.google.com makes its own sheet once and keeps the tabs current', () => {
+  const srv = loadServer({ standalone: true });
+  const claim = srv.post({ app: 'reading-log', op: 'claim', key: KEY });
+  assert.equal(claim.ok, true);
+  assert.equal(srv.created, 1);
+  assert.equal(srv.ss.name, '독서기록');
+  assert.equal(claim.sheetUrl, 'https://docs.google.com/spreadsheets/d/FAKE/edit');
+  const push = [
+    { table: 'readers', rec: { id: 'r_kid1', name: '민준', slot: 0, updatedAt: 'T1' } },
+    { table: 'books', rec: book('b_1', '구름빵') },
+    { table: 'reads', rec: read('r1', 'b_1', 'r_kid1', '2026-10-01') },
+  ];
+  assert.equal(srv.post({ app: 'reading-log', op: 'sync', key: KEY, device: 'd_a', since: 0, push }).ok, true);
+  assert.equal(srv.post({ app: 'reading-log', op: 'sync', key: KEY, device: 'd_b', since: 0, push: [] }).rows.length, 3);
+  assert.equal(srv.created, 1, 'the same sheet is used again');
+  const log = srv.ss.getSheetByName('독서기록').rows;
+  assert.deepEqual(log[1].slice(1, 4), ['민준', '', '구름빵'], 'tabs rebuilt after a change, without opening the sheet');
+});
+
 // ---------- two phones through the server ----------
 
 // A tiny model of the app's store (ids, tombstones, outbox) around the real merge and server.

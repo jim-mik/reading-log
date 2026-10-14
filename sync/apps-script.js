@@ -1,14 +1,16 @@
-// 우리집 독서기록 - family sync server. Runs as a Google Apps Script bound to a Google Sheet.
+// 우리집 독서기록 - family sync server, a Google Apps Script web app that keeps the records in a Google Sheet.
 //
-// Install (once, on a PC): new Google Sheet → 확장 프로그램 → Apps Script → replace Code.gs with this
-// file → 배포 → 새 배포 → 웹 앱 (실행: 나, 액세스 권한: 모든 사용자) → paste the web app URL into the
-// app's 설정 → 가족 동기화. After editing this code, use 배포 관리 → 수정 → 새 버전, not 새 배포,
-// so the URL stays the same.
+// Install (once, on a PC), either way:
+//   - in a Google Sheet: 확장 프로그램 → Apps Script, or
+//   - at script.google.com → 새 프로젝트 (the script then makes a "독서기록" sheet in My Drive on first use);
+// then replace Code.gs with this file → 배포 → 새 배포 → 웹 앱 (실행: 나, 액세스 권한: 모든 사용자) →
+// paste the web app URL into the app's 설정 → 가족 동기화. After editing this code, use 배포 관리 →
+// 수정 → 새 버전, not 새 배포, so the URL stays the same.
 //
 // How it works: each record a phone changes is appended to the hidden "_log" tab as a new row, and
 // each phone pulls the rows added since the last row it saw (its cursor). Old rows are never edited:
 // the phones settle conflicts themselves (newer updatedAt wins). The readable 독서기록 and 책장 tabs
-// are rebuilt from the log whenever the spreadsheet is opened.
+// are rebuilt from the log after each change and when the spreadsheet is opened.
 
 const PROTOCOL = 1;
 const LOG = '_log';
@@ -42,13 +44,25 @@ function doPost(e) {
   let out;
   try {
     lock.waitLock(30000);
-    out = handle(JSON.parse(e.postData.contents), SpreadsheetApp.getActiveSpreadsheet(), PropertiesService.getScriptProperties());
+    const props = PropertiesService.getScriptProperties();
+    out = handle(JSON.parse(e.postData.contents), spreadsheet(props), props);
   } catch (err) {
     out = { ok: false, error: 'server', message: String((err && err.message) || err) };
   } finally {
     lock.releaseLock();
   }
   return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
+}
+
+// The sheet this script is attached to, or for a script made at script.google.com, a sheet of its own.
+function spreadsheet(props) {
+  const active = SpreadsheetApp.getActiveSpreadsheet();
+  if (active) return active;
+  const id = props.getProperty('sheetId');
+  if (id) return SpreadsheetApp.openById(id);
+  const ss = SpreadsheetApp.create('독서기록');
+  props.setProperty('sheetId', ss.getId());
+  return ss;
 }
 
 // req: {app, op: 'claim' | 'sync', key, device, since, push: [{table, rec}]}
@@ -68,7 +82,13 @@ function handle(req, ss, props) {
   if (req.op !== 'sync' || !/^[\w-]{1,64}$/.test(req.device || '')) return { ok: false, error: 'bad-request' };
 
   const sheet = logSheet(ss, props);
-  append(sheet, req.device, Array.isArray(req.push) ? req.push : []);
+  if (append(sheet, req.device, Array.isArray(req.push) ? req.push : [])) {
+    try {
+      buildTables(ss);
+    } catch (err) {
+      // the readable tabs are a convenience; sync goes on without them
+    }
+  }
   return Object.assign(base, { logId: props.getProperty('logId') }, pull(sheet, req.device, Number(req.since) || 0));
 }
 
@@ -102,12 +122,13 @@ function append(sheet, device, push) {
     rows.push([now, text(device), item.table, text(id), text(String(rec.updatedAt || '')), rec.deletedAt ? 'Y' : '',
       text(JSON.stringify(summary).slice(0, CELL))].concat(cells(JSON.stringify(rec))));
   }
-  if (!rows.length) return;
+  if (!rows.length) return 0;
   const width = rows.reduce((w, r) => Math.max(w, r.length), 0);
   for (const r of rows) while (r.length < width) r.push('');
   const first = sheet.getLastRow() + 1;
   fit(sheet, first + rows.length - 1, width);
   sheet.getRange(first, 1, rows.length, width).setValues(rows);
+  return rows.length;
 }
 
 // Rows after `since` that other phones wrote. cursor = the last row looked at.
@@ -143,7 +164,7 @@ function onOpen() {
 }
 
 function refreshTables() {
-  buildTables(SpreadsheetApp.getActiveSpreadsheet());
+  buildTables(spreadsheet(PropertiesService.getScriptProperties()));
 }
 
 function buildTables(ss) {

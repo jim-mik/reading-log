@@ -76,7 +76,11 @@ class Sheet {
 }
 
 class Spreadsheet {
-  constructor() { this.sheets = new Map([['시트1', new Sheet('시트1')]]); }
+  constructor(name = '제목 없는 스프레드시트') {
+    this.name = name;
+    this.sheets = new Map([['시트1', new Sheet('시트1')]]);
+  }
+  getId() { return 'FAKE'; }
   getSheetByName(name) { return this.sheets.get(name) || null; }
   insertSheet(name) {
     const s = new Sheet(name);
@@ -87,12 +91,26 @@ class Spreadsheet {
   getUrl() { return 'https://docs.google.com/spreadsheets/d/FAKE/edit'; }
 }
 
-export function loadServer() {
-  const ss = new Spreadsheet();
+// standalone: a script made at script.google.com, with no sheet of its own until it creates one.
+export function loadServer({ standalone = false } = {}) {
+  let ss = standalone ? null : new Spreadsheet();
+  let created = 0;
   const props = new Map();
   let uuid = 0;
   const context = vm.createContext({
-    SpreadsheetApp: { getActiveSpreadsheet: () => ss, getUi: () => ({ createMenu: () => ({ addItem() { return this; }, addToUi() {} }) }) },
+    SpreadsheetApp: {
+      getActiveSpreadsheet: () => (standalone ? null : ss),
+      openById: (id) => {
+        if (id !== 'FAKE' || !ss) throw new Error(`no spreadsheet ${id}`);
+        return ss;
+      },
+      create: (name) => {
+        created++;
+        ss = new Spreadsheet(name);
+        return ss;
+      },
+      getUi: () => ({ createMenu: () => ({ addItem() { return this; }, addToUi() {} }) }),
+    },
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props.get(k) ?? null, setProperty: (k, v) => props.set(k, v) }) },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     Utilities: { getUuid: () => `log-${++uuid}` },
@@ -103,7 +121,8 @@ export function loadServer() {
   });
   vm.runInContext(CODE, context);
   return {
-    ss,
+    get ss() { return ss; },
+    get created() { return created; },
     props,
     post: (body) => JSON.parse(context.doPost({ postData: { contents: typeof body === 'string' ? body : JSON.stringify(body) } }).text),
     get: () => context.doGet().text,

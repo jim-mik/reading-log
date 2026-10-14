@@ -67,14 +67,18 @@ function setupSteps() {
   return h('details', { class: 'more' },
     h('summary', null, '처음 설정하는 방법 (PC에서 5분)'),
     h('ol', { class: 'steps' },
-      h('li', null, 'PC에서 구글 드라이브 → 새로 만들기 → Google 스프레드시트로 빈 시트를 만들어요. 이름은 "독서기록"처럼 자유롭게 지어요.'),
-      h('li', null, '시트 메뉴에서 확장 프로그램 → Apps Script를 열어요.'),
+      h('li', null, 'PC 크롬에서 구글 드라이브 → 새로 만들기 → Google 스프레드시트로 빈 시트를 만들어요. 이름은 "독서기록"처럼 자유롭게 지어요. (휴대폰 시트 앱에는 다음 단계의 메뉴가 없어요.)'),
+      h('li', null, '시트 위쪽 메뉴에서 확장 프로그램 → Apps Script를 열어요. 메뉴가 안 보이면 아래 "메뉴가 없을 때"를 보세요.'),
       h('li', null, '편집기에 있는 코드를 모두 지우고, 아래 주소의 코드를 전부 복사해 붙여 넣은 뒤 저장해요.',
         h('br'), h('a', { href: code, target: '_blank', rel: 'noopener', class: 'break' }, code)),
       h('li', null, '오른쪽 위 배포 → 새 배포 → 유형 선택(톱니바퀴) → 웹 앱을 골라요. 실행은 "나", 액세스 권한이 있는 사용자는 "모든 사용자"로 두고 배포를 눌러요.'),
       h('li', null, '액세스 승인 → 계정 선택. "Google에서 확인하지 않은 앱" 화면이 나오면 고급 → "…(으)로 이동(안전하지 않음)" → 허용을 눌러요. 직접 붙여 넣은 코드가 내 시트에 기록을 쓰는 권한이에요.'),
       h('li', null, '"/exec"로 끝나는 웹 앱 URL을 복사해 이 폰으로 보내고(카톡 나에게 보내기 등), 위 칸에 붙여 넣고 연결을 눌러요.'),
-      h('li', null, '다른 가족 폰은 이 폰의 "다른 폰 연결하기"로 받은 연결 코드를 붙여 넣으면 돼요.')));
+      h('li', null, '다른 가족 폰은 이 폰의 "다른 폰 연결하기"로 받은 연결 코드를 붙여 넣으면 돼요.')),
+    h('p', { class: 'small' }, h('b', null, '메뉴가 없을 때: '),
+      '오른쪽 위의 ⌃ 버튼(메뉴 숨기기)을 눌러 메뉴를 펼쳐 보세요. 제목 옆에 .XLSX가 붙은 엑셀 파일이면 파일 → Google 스프레드시트로 저장한 시트에서 하세요. ',
+      '그래도 없으면 1~2번 대신 PC에서 script.google.com → 새 프로젝트로 시작해도 돼요. 시트는 처음 연결할 때 내 드라이브에 "독서기록"으로 저절로 생겨요. ',
+      '회사 구글 계정은 Apps Script가 막혀 있을 수 있으니 개인 Gmail 계정을 쓰세요.'));
 }
 
 function syncCard(rerender) {
@@ -140,7 +144,7 @@ function syncCard(rerender) {
   };
   const sheet = settings().syncSheetUrl;
   card.append(
-    h('p', { class: 'hint' }, '이 폰의 기록이 구글 시트로 자동으로 가고, 다른 폰의 기록도 받아 와요. 시트의 "독서기록"·"책장" 탭은 시트를 열 때마다 새로 정리돼요.'),
+    h('p', { class: 'hint' }, '이 폰의 기록이 구글 시트로 자동으로 가고, 다른 폰의 기록도 받아 와요. 시트의 "독서기록"·"책장" 탭에서 기록을 표로 볼 수 있어요.'),
     line,
     h('div', { class: 'stack' },
       h('button', { class: 'btn primary', onClick: () => sync.syncNow() }, '지금 동기화'),

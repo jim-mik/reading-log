@@ -35,7 +35,7 @@ It installs to the home screen on Galaxy S25/S26 through Chrome's "홈 화면에
 
 | Key | Where | What it adds |
 |---|---|---|
-| Kakao REST API key | developers.kakao.com → 내 애플리케이션 → 앱 키 | Korean book lookup and title autocomplete (recommended) |
+| Kakao REST API key | developers.kakao.com → 내 애플리케이션 → 앱 → 플랫폼 키 → REST API 키 (leave 허용 IP empty) | Korean book lookup and title autocomplete (recommended) |
 | National Library cert_key | nl.go.kr → 오픈API → 인증키 신청 | Page counts and subjects for Korean books |
 | Google Books key | Google Cloud console | Fewer "quota exceeded" misses for English books |
 | Claude API key | console.anthropic.com | Cover-photo reading, subject/level/word-count suggestions |

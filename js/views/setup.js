@@ -217,7 +217,7 @@ export function renderSettings(root, { rerender }) {
     h('p', { class: 'hint' }, '바코드를 찍으면 아래 서비스에서 책 정보를 찾아요. 영어책은 키 없이도 찾지만, 한국 책은 카카오 키가 있어야 잘 찾아요.'),
     keyField({
       label: '카카오 REST API 키 (추천)', key: 'kakaoKey', placeholder: 'REST API 키',
-      help: 'developers.kakao.com에 로그인 → 내 애플리케이션 → 애플리케이션 추가 → 앱 키의 "REST API 키"를 복사해 붙여 넣으세요. 무료예요.',
+      help: 'developers.kakao.com에 로그인 → 내 애플리케이션 → 애플리케이션 추가 → 앱 → 플랫폼 키의 "REST API 키"를 복사해 붙여 넣으세요. 무료예요. 허용 IP 설정은 비워 두세요 (휴대폰의 IP는 계속 바뀌어요).',
       test: () => testKey('kakao'),
     }),
     keyField({

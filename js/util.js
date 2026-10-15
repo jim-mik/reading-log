@@ -39,6 +39,7 @@ export function weekStart(s) {
 }
 
 export function periodKey(s, unit) {
+  if (unit === 'day') return s;
   if (unit === 'week') return weekStart(s);
   if (unit === 'month') return s.slice(0, 7);
   return s.slice(0, 4);
@@ -50,7 +51,8 @@ export function periodRange(endDay, unit, count) {
   let key = periodKey(endDay, unit);
   for (let i = 0; i < count; i++) {
     keys.unshift(key);
-    if (unit === 'week') key = addDays(key, -7);
+    if (unit === 'day') key = addDays(key, -1);
+    else if (unit === 'week') key = addDays(key, -7);
     else if (unit === 'month') {
       let [y, m] = key.split('-').map(Number);
       m -= 1;
@@ -62,6 +64,11 @@ export function periodRange(endDay, unit, count) {
 }
 
 export function periodLabel(key, unit) {
+  if (unit === 'day') {
+    // Short enough for 14 bars: the month only on the 1st.
+    const [, m, d] = key.split('-').map(Number);
+    return d === 1 ? `${m}/1` : String(d);
+  }
   if (unit === 'week') {
     const [, m, d] = key.split('-').map(Number);
     return `${m}/${d}`;

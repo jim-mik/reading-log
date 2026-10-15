@@ -19,7 +19,7 @@ export const MODELS = [
 
 export const hasClaude = () => !!settings().claudeKey;
 
-function system(subs) {
+function system(subs, known) {
   return `You help a Korean family keep a log of the books their children read.
 You get a photo of a book (front cover, back cover, spine or title page), or a short text description of a book.
 Fill in every field:
@@ -32,6 +32,8 @@ Fill in every field:
 - subject: the best-fitting category key from the list below.
 - level: reading difficulty 1-5 on the scale below, judged from book type, text density and target age.
 - pages, words: your best estimate for this book; use what you know about well-known titles; 0 if you have no basis.
+- series: for a book from a series or a Korean 전집 (multi-volume set), the series name and volume number as printed (e.g. "안녕, 마음아 12"); "" otherwise.
+- topics: 1 to 4 short Korean topic tags for what the book is about (nouns such as 공룡, 감정, 숫자, 탈것; no "#", no spaces). When one of the family's existing tags means the same thing, use that exact tag.${known.length ? `\nExisting tags: ${known.join(', ')}` : ''}
 
 Difficulty scale:
 ${LEVELS.map((l) => `${l.n} = ${l.name} (${l.hint})`).join('\n')}
@@ -54,8 +56,10 @@ function schema(subjectKeys) {
       level: { type: 'integer', enum: [1, 2, 3, 4, 5] },
       pages: { type: 'integer' },
       words: { type: 'integer' },
+      series: { type: 'string' },
+      topics: { type: 'array', items: { type: 'string' } },
     },
-    required: ['found', 'title', 'authors', 'publisher', 'isbn', 'language', 'subject', 'level', 'pages', 'words'],
+    required: ['found', 'title', 'authors', 'publisher', 'isbn', 'language', 'subject', 'level', 'pages', 'words', 'series', 'topics'],
     additionalProperties: false,
   };
 }
@@ -96,12 +100,13 @@ export async function testClaude() {
 }
 
 // image: base64 JPEG (no data: prefix). text: book facts we already know.
-export async function readBook({ image, text }) {
+// knownTags: the family's tags, so topics reuse the same words.
+export async function readBook({ image, text, knownTags = [] }) {
   const subs = subjects();
   const content = [];
   if (image) content.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: image } });
   content.push({ type: 'text', text: text || 'Read the book in this photo.' });
-  return structured({ system: system(subs), content, schema: schema(subs.map((s) => s.key)) });
+  return structured({ system: system(subs, knownTags.slice(0, 80)), content, schema: schema(subs.map((s) => s.key)) });
 }
 
 const NOTE_SYSTEM = `You help Korean parents keep notes on what their young child learned, from a book or from daily life.

@@ -1,4 +1,4 @@
-// 통계: totals, a stacked column chart by week/month/year, most-read books, shelf progress.
+// 통계: totals, a stacked column chart by day/week/month/year, most-read books, shelf progress.
 
 import { h, periodLabel, todayStr, fmtNum, compactNum } from '../util.js';
 import { LANGS, LEVELS } from '../catalog.js';
@@ -10,7 +10,8 @@ import { openBook } from './book.js';
 
 const f = { unit: 'month', reader: 'all', by: 'reader', metric: 'books' };
 
-const UNITS = [{ key: 'week', label: '주별' }, { key: 'month', label: '월별' }, { key: 'year', label: '연도별' }];
+const UNITS = [{ key: 'day', label: '일별' }, { key: 'week', label: '주별' }, { key: 'month', label: '월별' }, { key: 'year', label: '연도별' }];
+const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
 const GROUPS = [
   { key: 'reader', label: '사람별' },
   { key: 'lang', label: '언어별' },
@@ -21,6 +22,7 @@ const GROUPS = [
 
 function longLabel(key, unit) {
   const [y, m, d] = key.split('-').map(Number);
+  if (unit === 'day') return `${y}년 ${m}월 ${d}일 (${DAY_NAMES[new Date(y, m - 1, d).getDay()]})`;
   if (unit === 'week') return `${y}년 ${m}월 ${d}일 주`;
   if (unit === 'month') return `${y}년 ${m}월`;
   return `${y}년`;
@@ -63,7 +65,7 @@ export function renderStats(root, { rerender }) {
 
   root.append(h('header', { class: 'page-head' }, h('h1', null, '통계')));
   if (!all.length) {
-    root.append(emptyState('기록이 쌓이면 여기에서 주·월·연도별로 볼 수 있어요.'));
+    root.append(emptyState('기록이 쌓이면 여기에서 일·주·월·연도별로 볼 수 있어요.'));
     return;
   }
 
@@ -75,11 +77,11 @@ export function renderStats(root, { rerender }) {
   const t = headline(rows, f.metric, today);
   const fmt = f.metric === 'words' ? compactNum : fmtNum;
   root.append(h('div', { class: 'tiles' },
-    [['이번 주', t.week], ['이번 달', t.month], ['올해', t.year], ['전체', t.all]].map(([label, v]) =>
+    [['오늘', t.today], ['이번 주', t.week], ['이번 달', t.month], ['올해', t.year], ['전체', t.all]].map(([label, v]) =>
       h('div', { class: 'tile' }, h('span', { class: 'tile-label' }, label), h('span', { class: 'tile-value' }, fmt(v), h('small', null, unit))))));
 
   // Chart
-  const count = f.unit === 'year' ? yearCount(rows, today) : 12;
+  const count = f.unit === 'year' ? yearCount(rows, today) : f.unit === 'day' ? 14 : 12;
   const { keys, table } = timeSeries(rows, { unit: f.unit, count, metric: f.metric, by: f.by, today });
   if (f.by === 'subject') foldSubjects(table);
   const box = h('div', { class: 'chart-box' });

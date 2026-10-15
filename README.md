@@ -16,14 +16,23 @@ It installs to the home screen on Galaxy S25/S26 through Chrome's "홈 화면에
 - **Add a book**: live barcode scan, a photo of the cover or barcode, or typing a title (autocomplete shows books
   already on the shelf first, then online results). Pick who read it (several people at once), whether a parent
   read it aloud, and the dates. The date defaults to today, and more dates can be added.
-- **Book info** comes from Kakao book search (Korean books), the National Library of Korea (page count and subject
-  code from the ISBN add-on code), Open Library and Google Books (English books).
+- **Book info** comes from Kakao book search (Korean books), the National Library of Korea (the Korean ISBN
+  registry, so it also knows 전집 volumes that bookstores don't list; series, page count, subject code; also used
+  for title suggestions), Open Library and Google Books (English books).
+- **전집 (multi-volume sets)**: a barcode no catalog knows is saved with the title typed once, and recognized on
+  the next scan. A new ISBN numerically close to one on the shelf from the same publisher block is treated as
+  the same set: its series name, publisher, subject, level and tags are filled in. Books have a series field.
+- **Subject and topic tags** are filled automatically from the title and series name by keyword rules
+  (`js/classify.js`; no AI needed), refined by Claude when a key is set (it reuses the family's existing tags).
+  설정 → 책 자동 분류 fills empty subjects and tags of books already on the shelf. The shelf search takes #tags.
+- **Barcode scanner**: main back camera, continuous autofocus, 2x zoom by default (1x/2x/3x buttons), torch,
+  tap to focus; barcodes are looked for inside the on-screen frame at full resolution.
 - **AI (optional)**: with a Claude API key, a cover photo with no barcode is read by Claude. Claude also
   suggests the subject, difficulty and word count for new books.
 - **Difficulty**: 5 steps (그림책 → 소설·지식책). The step is suggested from the word count or page count, or by AI,
   and can always be changed by hand. English books also have a free-text field for AR/Lexile levels.
 - **Shelf**: search, filters for read / not read by a given person, language, subject.
-- **Stats**: this week / month / year / all-time totals; stacked columns by week, month or year, split by person,
+- **Stats**: today / this week / month / year / all-time totals; stacked columns by day (14 days), week, month or year, split by person,
   language, subject, difficulty or read-aloud; counted in books, pages or words; most-read books;
   progress through the shelf for each person.
 - **Notes** (노트 tab, and on each book's page): what a child learned, from a book or not. Text with #tags, up to
@@ -41,7 +50,7 @@ It installs to the home screen on Galaxy S25/S26 through Chrome's "홈 화면에
 | Key | Where | What it adds |
 |---|---|---|
 | Kakao REST API key | developers.kakao.com → 내 애플리케이션 → 앱 → 플랫폼 키 → REST API 키 (leave 허용 IP empty) | Korean book lookup and title autocomplete (recommended) |
-| National Library cert_key | nl.go.kr → 오픈API → 인증키 신청 | Page counts and subjects for Korean books |
+| National Library cert_key | nl.go.kr → 도서관 서비스 → Open API → 인증키 신청 (needs approval) | 전집 volumes and other Korean ISBNs bookstores don't list, series, page counts, subjects |
 | Google Books key | Google Cloud console | Fewer "quota exceeded" misses for English books |
 | Claude API key | console.anthropic.com | Cover-photo reading, subject/level/word-count suggestions |
 
@@ -101,6 +110,7 @@ js/merge.js                               merge rules for sync and backup import
 js/sync.js                                family sync with the Google Sheet
 js/notes.js                               note tags, search, 누리과정 areas
 js/lookup.js                              book catalogs (Kakao, NL, Open Library, Google)
+js/classify.js                            subject and topic tags from a title, without AI
 js/ai.js                                  Claude: read a cover photo / classify a book
 js/media.js                               photos, barcode detection
 js/stats.js, js/chart.js                  aggregation, SVG stacked-column chart

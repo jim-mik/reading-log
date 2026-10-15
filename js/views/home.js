@@ -30,10 +30,10 @@ export function renderHome(root, { goTo }) {
   const summary = readers.length && h('section', { class: 'card' },
     h('h3', null, '읽은 책'),
     h('table', { class: 'mini' },
-      h('thead', null, h('tr', null, h('th', null, ''), h('th', null, '이번 주'), h('th', null, '이번 달'), h('th', null, '올해'))),
+      h('thead', null, h('tr', null, h('th', null, ''), h('th', null, '오늘'), h('th', null, '이번 주'), h('th', null, '이번 달'), h('th', null, '올해'))),
       h('tbody', null, readers.map((r) => {
         const t = headline(rows.filter((x) => x.readerId === r.id), 'books', today);
-        return h('tr', null, h('th', null, whoChip(r)), h('td', null, `${t.week}권`), h('td', null, `${t.month}권`), h('td', null, `${t.year}권`));
+        return h('tr', null, h('th', null, whoChip(r)), h('td', null, `${t.today}권`), h('td', null, `${t.week}권`), h('td', null, `${t.month}권`), h('td', null, `${t.year}권`));
       }))));
 
   // Recent: one line per book per day, newest first.

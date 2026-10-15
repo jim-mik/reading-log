@@ -2,6 +2,7 @@
 
 import { h, todayStr, nowIso } from '../util.js';
 import { DEFAULT_SUBJECTS } from '../catalog.js';
+import { classify } from '../classify.js';
 import * as store from '../store.js';
 import { settings, updateSettings } from '../settings.js';
 import { testKey } from '../lookup.js';
@@ -229,7 +230,7 @@ export function renderSettings(root, { rerender }) {
     }),
     keyField({
       label: '국립중앙도서관 ISBN 키 (선택)', key: 'nlKey', placeholder: 'cert_key',
-      help: 'nl.go.kr → 오픈API → 인증키 신청. 한국 책의 쪽수와 분야를 채워 줘요.',
+      help: '한국 ISBN을 발급하는 곳이라, 전집처럼 서점 목록에 없는 책도 바코드와 제목으로 찾아요. 쪽수와 분야도 채워 줘요. nl.go.kr 회원가입 → 도서관 서비스 → Open API → 인증키 신청 (승인까지 시간이 걸릴 수 있어요).',
       test: () => testKey('nl'),
     }),
     keyField({
@@ -237,6 +238,27 @@ export function renderSettings(root, { rerender }) {
       help: '없어도 되지만, 구글 쪽 무료 한도가 자주 차요. 있으면 영어책 쪽수를 더 잘 채워요.',
       test: () => testKey('google'),
     }));
+
+  // Subject and tags for books already on the shelf, from their titles. Only empty ones, so a
+  // subject or tag someone chose (or removed) stays as it is.
+  const sortable = () => store.books().map((b) => {
+    const r = classify(b, store.subjects());
+    const patch = {};
+    if (!b.subject && r.subject) patch.subject = r.subject;
+    if (!b.tags?.length && r.tags.length) patch.tags = r.tags;
+    return Object.keys(patch).length ? { id: b.id, ...patch } : null;
+  }).filter(Boolean);
+  const pending = sortable().length;
+  const sorting = h('section', { class: 'card' },
+    h('h3', null, '책 자동 분류'),
+    h('p', { class: 'hint' }, '새 책은 제목과 전집 이름으로 과목과 태그(주제)를 자동으로 골라요. Claude 키가 있으면 AI가 더 정확하게 골라요. 이미 책장에 있는 책도 한 번에 채울 수 있어요 (비어 있는 과목과 태그만 채워요).'),
+    h('button', {
+      class: 'btn', disabled: !pending,
+      onClick: async () => {
+        const n = await store.updateBooks(sortable());
+        toast(`${n}권에 과목·태그를 채웠어요`);
+      },
+    }, pending ? `책장 ${pending}권 분류하기` : '분류할 책이 없어요'));
 
   // AI
   const ai = h('section', { class: 'card' },
@@ -307,6 +329,6 @@ export function renderSettings(root, { rerender }) {
     h('p', { class: 'small' }, `책 ${store.books().length}권 · 기록 ${store.reads().length}건 · 저장 공간 `, persisted),
     h('p', { class: 'small muted' }, `버전 ${APP_VERSION}`));
 
-  root.append(h('header', { class: 'page-head' }, h('h1', null, '설정')), people, syncCard(rerender), subjects, search, ai, backup, about);
+  root.append(h('header', { class: 'page-head' }, h('h1', null, '설정')), people, syncCard(rerender), subjects, search, sorting, ai, backup, about);
 }
 

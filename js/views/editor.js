@@ -9,6 +9,8 @@ import { LANGS, LEVELS, levelFromSize, toIsbn13, guessLang } from '../catalog.js
 import * as store from '../store.js';
 import { settings, updateSettings } from '../settings.js';
 import { lookupIsbn, searchTitle, bestTitleMatch } from '../lookup.js';
+import { classify } from '../classify.js';
+import { cleanTag } from '../notes.js';
 import { readBook, hasClaude } from '../ai.js';
 import { canScanLive, findIsbn, preparePhoto, pickPhoto } from '../media.js';
 import { openScanner } from './scanner.js';
@@ -16,10 +18,10 @@ import { openOverlay, closeOverlay, toast, chipGroup, cover, icon, readerColor, 
 
 const EMPTY = {
   isbn: '', title: '', authors: '', publisher: '', pubDate: '', lang: null, subject: null,
-  level: null, levelTag: '', pages: null, words: null, cover: '', note: '',
+  level: null, levelTag: '', pages: null, words: null, cover: '', note: '', series: '', tags: [],
 };
 const IDENTITY = ['isbn', 'title', 'authors', 'publisher', 'pubDate', 'cover'];
-const DETAILS = ['lang', 'subject', 'pages', 'words'];
+const DETAILS = ['lang', 'subject', 'pages', 'words', 'series'];
 
 export function openEditor({ bookId = null, mode = 'record', start = null, shelfOnly = false } = {}) {
   const existing = bookId ? store.getBook(bookId) : null;
@@ -29,6 +31,9 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
     book: { ...EMPTY, ...(existing || {}) },
     touched: new Set(existing ? Object.keys(EMPTY).filter((k) => existing[k]) : []),
     levelFrom: existing?.level ? 'saved' : null, // user | ai | size | saved
+    subjectFrom: existing?.subject ? 'saved' : null, // user | catalog | ai | rule | saved
+    autoTags: [], // from the title (classify.js), saved with the book unless removed
+    removedTags: new Set(),
     description: '',
     readerIds: shelfOnly ? [] : (settings().lastReaderIds || []).filter((id) => liveReaderIds.has(id)),
     dates: [todayStr()],
@@ -53,6 +58,8 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
     // A different book than before (e.g. a second scan): drop details that came from the first one.
     if (force && data.isbn && st.book.isbn && data.isbn !== st.book.isbn) {
       for (const k of DETAILS) if (!st.touched.has(k)) st.book[k] = EMPTY[k];
+      if (!st.touched.has('tags')) st.book.tags = [];
+      if (st.subjectFrom !== 'user') st.subjectFrom = null;
       if (['size', 'ai'].includes(st.levelFrom)) {
         st.book.level = null;
         st.levelFrom = null;
@@ -63,13 +70,27 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
       const v = data[k];
       if (v == null || v === '' || v === 0) continue;
       const replace = force && IDENTITY.includes(k);
-      if (!replace && (st.touched.has(k) || st.book[k])) continue;
+      const guessed = k === 'subject' && st.subjectFrom === 'rule';
+      if (!replace && !guessed && (st.touched.has(k) || st.book[k])) continue;
       st.book[k] = v;
+      if (k === 'subject') st.subjectFrom = 'catalog';
       if (replace) st.touched.delete(k);
     }
     autoLevel();
+    ruleFill();
     paint();
   }
+
+  // Subject and topic tags from the title and series name, for what the catalog and the user left empty.
+  function ruleFill() {
+    const r = classify({ title: st.book.title, series: st.book.series }, store.subjects());
+    if (!st.touched.has('subject') && (!st.book.subject || st.subjectFrom === 'rule')) {
+      st.book.subject = r.subject;
+      st.subjectFrom = r.subject ? 'rule' : null;
+    }
+    st.autoTags = r.tags.filter((t) => !st.removedTags.has(t) && !(st.book.tags || []).includes(t));
+  }
+  const allBookTags = () => [...new Set([...(st.book.tags || []), ...st.autoTags])];
 
   function autoLevel() {
     if (['user', 'saved', 'ai'].includes(st.levelFrom)) return;
@@ -81,7 +102,14 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
   }
 
   function applyAi(ai) {
-    fill({ lang: ai.language, subject: ai.subject, pages: ai.pages || null, words: ai.words || null });
+    if (ai.subject && !st.touched.has('subject') && ['rule', null].includes(st.subjectFrom)) {
+      st.book.subject = ai.subject;
+      st.subjectFrom = 'ai';
+    }
+    if (ai.series && !st.book.series) st.book.series = ai.series;
+    const topics = (ai.topics || []).map(cleanTag).filter((t) => t && !st.removedTags.has(t));
+    st.book.tags = [...new Set([...(st.book.tags || []), ...topics])];
+    fill({ lang: ai.language, pages: ai.pages || null, words: ai.words || null });
     if (ai.level && !['user', 'saved'].includes(st.levelFrom)) {
       st.book.level = ai.level;
       st.levelFrom = 'ai';
@@ -95,6 +123,8 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
     st.book = { ...EMPTY, ...book };
     st.touched = new Set(Object.keys(EMPTY).filter((k) => book[k]));
     st.levelFrom = book.level ? 'saved' : null;
+    st.subjectFrom = book.subject ? 'saved' : null;
+    st.autoTags = [];
     hideSuggest();
     setCompact(mode === 'record');
     paint();
@@ -104,7 +134,7 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
   // ---------- finding a book ----------
 
   async function handleIsbn(isbn, thumb) {
-    const mine = store.getBook(`isbn_${isbn}`);
+    const mine = store.bookByIsbn(isbn);
     if (mine && !st.bookId) {
       useExisting(mine);
       return true;
@@ -113,7 +143,26 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
     const hit = await lookupIsbn(isbn).catch(() => null);
     if (!hit) {
       fill({ isbn, cover: thumb }, { force: true });
-      setStatus(`ISBN ${isbn}로 책 정보를 찾지 못했어요. 제목을 직접 입력해 주세요.${settings().kakaoKey ? '' : ' (설정에서 카카오 키를 넣으면 한국 책을 훨씬 잘 찾아요)'}`, 'error');
+      const korean = /^97(89|911)/.test(isbn);
+      const tip = korean && !settings().nlKey ? ' 설정에서 국립중앙도서관 키를 넣으면 전집처럼 서점에 없는 책도 찾아요.'
+        : !settings().kakaoKey ? ' 설정에서 카카오 키를 넣으면 한국 책을 훨씬 잘 찾아요.' : '';
+      // Volumes of a 전집 get ISBNs in sequence: borrow the set's details from a neighbor on the shelf.
+      const near = store.nearestByIsbn(isbn);
+      if (near) {
+        const set = near.series ? near.series.replace(/\s*\d+\s*$/, '') : '';
+        fill({ publisher: near.publisher, authors: near.authors, lang: near.lang, subject: near.subject, series: set });
+        if (!st.book.level && near.level) {
+          st.book.level = near.level;
+          st.levelFrom = 'size';
+        }
+        if (set && !st.book.title) st.book.title = `${set} `;
+        st.book.tags = [...new Set([...(st.book.tags || []), ...(near.tags || [])])];
+        paint();
+        setStatus(`서점 목록에 없는 책이에요. ISBN이 "${near.title}"와 이어져서 같은 전집으로 보고 출판사·과목을 채웠어요. 이 권의 제목만 써 주세요. 한 번 저장하면 다음부터는 바로 찾아요.${tip}`, 'ok');
+        if (set) setTimeout(() => ui.title.focus(), 50);
+        return false;
+      }
+      setStatus(`ISBN ${isbn}로 책 정보를 찾지 못했어요. 전집처럼 서점에 없는 책일 수 있어요. 제목을 직접 써 주세요. 한 번 저장하면 다음부터는 바로 찾아요.${tip}`, 'error');
       return false;
     }
     fill(hit, { force: true });
@@ -123,10 +172,10 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
     return true;
   }
 
-  // New book found: let AI suggest subject/level if those are still empty.
+  // New book found: let AI suggest subject, level and topics unless the catalog gave them.
   async function autoClassify() {
     if (!hasClaude() || settings().aiAuto === false || st.bookId) return;
-    if (st.book.subject && st.book.level && st.levelFrom !== 'size') return;
+    if (st.subjectFrom === 'catalog' && st.book.level && st.levelFrom !== 'size' && st.book.tags?.length) return;
     await aiFill({ quiet: true });
   }
 
@@ -164,7 +213,7 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
     }
     setStatus('AI가 사진을 읽는 중… (10초쯤 걸려요)', 'busy');
     try {
-      const ai = await readBook({ image: p.base64 });
+      const ai = await readBook({ image: p.base64, knownTags: store.knownTags() });
       if (!ai.found || !ai.title) {
         setStatus('사진에서 책을 찾지 못했어요. 다시 찍거나 직접 입력해 주세요.', 'error');
         return;
@@ -176,7 +225,7 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
       if (!found) {
         setStatus('책 정보를 찾는 중…', 'busy');
         const match = await bestTitleMatch(ai.title, ai.authors);
-        if (match?.isbn && store.getBook(`isbn_${match.isbn}`)) return useExisting(store.getBook(`isbn_${match.isbn}`));
+        if (match?.isbn && store.bookByIsbn(match.isbn)) return useExisting(store.bookByIsbn(match.isbn));
         if (match) {
           fill(match, { force: true });
           st.description = match.description || '';
@@ -204,12 +253,13 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
       b.authors && `Authors: ${b.authors}`,
       b.publisher && `Publisher: ${b.publisher}`,
       b.isbn && `ISBN: ${b.isbn}`,
+      b.series && `Series: ${b.series}`,
       b.pages && `Pages: ${b.pages}`,
       st.description && `Description: ${st.description.slice(0, 1500)}`,
     ].filter(Boolean).join('\n');
     setStatus('AI가 과목과 난이도를 추정하는 중…', 'busy');
     try {
-      applyAi(await readBook({ text }));
+      applyAi(await readBook({ text, knownTags: store.knownTags() }));
       setStatus(quiet ? `찾았어요: ${b.title} · 과목·난이도는 AI 추정이에요` : 'AI 추정을 채웠어요. 맞는지 확인해 주세요.', 'ok');
     } catch (e) {
       setStatus(e.message, 'error');
@@ -241,6 +291,10 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
   function onTitleInput() {
     st.book.title = ui.title.value;
     st.touched.add('title');
+    ruleFill();
+    ui.subject.set(st.book.subject);
+    paintTags();
+    paintSubjectHint();
     online = null;
     const q = ui.title.value.trim();
     showSuggest();
@@ -285,7 +339,7 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
   async function pickOnline(x) {
     hideSuggest();
     ui.title.blur();
-    if (x.isbn && store.getBook(`isbn_${x.isbn}`)) return useExisting(store.getBook(`isbn_${x.isbn}`));
+    if (x.isbn && store.bookByIsbn(x.isbn)) return useExisting(store.bookByIsbn(x.isbn));
     fill(x, { force: true });
     st.description = x.description || '';
     setStatus(`골랐어요: ${x.title}`, 'ok');
@@ -351,10 +405,12 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
     }
     st.busy = true;
     try {
-      const fields = { ...st.book, title, isbn: toIsbn13(st.book.isbn) || '' };
+      const fields = { ...st.book, title, isbn: toIsbn13(st.book.isbn) || '', series: (st.book.series || '').trim(), tags: allBookTags() };
       fields.lang ||= guessLang(title) || 'ko';
       let id = st.bookId;
-      if (!id) id = (fields.isbn && store.getBook(`isbn_${fields.isbn}`)?.id) || store.findBookByTitle(title)?.id;
+      // Same book already on the shelf: by ISBN, or by title unless the ISBNs differ (another 전집 volume).
+      const sameTitle = store.findBookByTitle(title);
+      if (!id) id = (fields.isbn && store.bookByIsbn(fields.isbn)?.id) || (sameTitle && (!sameTitle.isbn || !fields.isbn) ? sameTitle.id : null);
       const book = await store.saveBook(fields, id || undefined);
       let n = 0;
       if (mode === 'record' && st.readerIds.length) {
@@ -383,6 +439,24 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
     ui.save.textContent = saveLabel();
   }
 
+  function paintSubjectHint() {
+    const why = { rule: '제목으로 고른 과목이에요. 다르면 바꿔 주세요.', ai: 'AI가 고른 과목이에요.', catalog: '도서관 분류로 고른 과목이에요.' }[st.subjectFrom];
+    ui.subjectHint.hidden = !why || !st.book.subject;
+    ui.subjectHint.textContent = why || '';
+  }
+
+  function paintTags() {
+    const remove = (t) => () => {
+      st.book.tags = (st.book.tags || []).filter((x) => x !== t);
+      st.autoTags = st.autoTags.filter((x) => x !== t);
+      st.removedTags.add(t);
+      st.touched.add('tags');
+      paintTags();
+    };
+    clear(ui.tags).append(...allBookTags().map((t) => h('span', { class: `chip static${st.autoTags.includes(t) ? ' auto' : ''}` }, `#${t}`,
+      h('button', { type: 'button', class: 'chip-x', 'aria-label': `${t} 빼기`, onClick: remove(t) }, icon('close', 14)))));
+  }
+
   function paint() {
     const b = st.book;
     // Never rewrite the box the user is typing in.
@@ -395,6 +469,7 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
     put(ui.isbn, b.isbn);
     put(ui.levelTag, b.levelTag);
     put(ui.note, b.note);
+    put(ui.series, b.series);
     ui.lang.set(b.lang);
     ui.subject.set(b.subject);
     ui.level.set(b.level ? String(b.level) : null);
@@ -407,6 +482,8 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
         bookBadges(b)),
       h('button', { type: 'button', class: 'link', onClick: () => setCompact(false) }, '정보 수정'));
     paintLevelHint();
+    paintSubjectHint();
+    paintTags();
     paintSave();
   }
 
@@ -455,6 +532,27 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
   });
   ui.levelTag = field('levelTag', { type: 'text', placeholder: '예: AR 2.3, Lexile 450L', 'aria-label': '레벨 표기' });
   ui.note = field('note', { type: 'text', placeholder: '메모', 'aria-label': '메모' });
+  ui.series = field('series', { type: 'text', placeholder: '예: 안녕, 마음아 12', 'aria-label': '전집·시리즈' });
+  ui.series.addEventListener('input', () => {
+    ruleFill();
+    ui.subject.set(st.book.subject);
+    paintTags();
+    paintSubjectHint();
+  });
+  ui.subjectHint = h('p', { class: 'hint', hidden: true });
+  ui.tags = h('div', { class: 'chips' });
+  ui.tagInput = h('input', {
+    class: 'input tag-input', placeholder: '태그 추가 (예: 공룡)', 'aria-label': '태그 추가',
+    onChange: (e) => {
+      const t = cleanTag(e.target.value);
+      e.target.value = '';
+      if (!t) return;
+      st.removedTags.delete(t);
+      st.book.tags = [...new Set([...(st.book.tags || []), t])];
+      st.touched.add('tags');
+      paintTags();
+    },
+  });
   ui.lang = chipGroup(LANGS, {
     onChange: (v) => {
       st.book.lang = v;
@@ -465,6 +563,8 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
     onChange: (v) => {
       st.book.subject = v;
       st.touched.add('subject');
+      st.subjectFrom = 'user';
+      paintSubjectHint();
     },
   });
   ui.level = chipGroup(LEVELS.map((l) => ({ key: String(l.n), label: `${l.n} ${l.name}` })), {
@@ -497,7 +597,8 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
         ui.authors,
         ui.publisher)),
     h('h3', null, '언어'), ui.lang,
-    h('h3', null, '과목'), ui.subject,
+    h('h3', null, '과목'), ui.subject, ui.subjectHint,
+    h('h3', null, '태그 (주제)'), ui.tags, ui.tagInput,
     h('div', { class: 'h3-row' },
       h('h3', null, '난이도'),
       hasClaude() && h('button', { type: 'button', class: 'chip ai', onClick: () => aiFill() }, icon('sparkle', 16), 'AI로 채우기')),
@@ -506,7 +607,8 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
       h('label', null, h('span', null, '쪽수'), ui.pages),
       h('label', null, h('span', null, '단어 수'), ui.words)),
     h('details', { class: 'more' },
-      h('summary', null, '더 보기 (ISBN, 레벨 표기, 메모)'),
+      h('summary', null, '더 보기 (전집, ISBN, 레벨 표기, 메모)'),
+      h('label', null, h('span', null, '전집·시리즈와 권 번호'), ui.series),
       h('label', null, h('span', null, 'ISBN'), ui.isbn),
       h('label', null, h('span', null, '레벨 표기 (영어책)'), ui.levelTag),
       h('label', null, h('span', null, '메모'), ui.note)));

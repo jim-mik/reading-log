@@ -117,6 +117,8 @@ export const reads = () => alive(state.reads).filter((r) => isLive(state.books.g
 export const readers = () => alive(state.readers).sort((a, b) => a.slot - b.slot);
 export const getBook = (id) => (isLive(state.books.get(id)) ? state.books.get(id) : null);
 export const getReader = (id) => state.readers.get(id);
+// Books are keyed isbn_<ISBN> when first saved with one; an ISBN added later lives only in the field.
+export const bookByIsbn = (isbn) => getBook(`isbn_${isbn}`) ?? books().find((b) => b.isbn === isbn) ?? null;
 const isLive = (x) => x && !x.deletedAt;
 
 export const subjects = () => state.meta.get('subjects')?.value ?? DEFAULT_SUBJECTS;
@@ -124,6 +126,26 @@ export const subjectLabel = (key) => subjects().find((s) => s.key === key)?.labe
 
 export function readsOfBook(bookId) {
   return reads().filter((r) => r.bookId === bookId).sort((a, b) => b.date.localeCompare(a.date));
+}
+
+// The family's tags, most used first, from books and notes (so new tags reuse the same words).
+export function knownTags() {
+  const counts = new Map();
+  for (const x of [...books(), ...notes()]) for (const t of x.tags || []) counts.set(t, (counts.get(t) || 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1]).map(([t]) => t);
+}
+
+// The shelf book whose ISBN is nearest to `isbn` from the same publisher block: volumes of a 전집
+// usually get ISBNs in sequence, so a new volume can borrow the set's name, subject and level.
+export function nearestByIsbn(isbn, within = 100) {
+  const n = Number(isbn.slice(0, 12));
+  let best = null;
+  for (const b of books()) {
+    if (!b.isbn || b.isbn === isbn || b.isbn.slice(0, 7) !== isbn.slice(0, 7)) continue;
+    const d = Math.abs(Number(b.isbn.slice(0, 12)) - n);
+    if (d <= within && (!best || d < best.d)) best = { book: b, d };
+  }
+  return best?.book ?? null;
 }
 
 export function findBookByTitle(title) {
@@ -134,7 +156,7 @@ export function findBookByTitle(title) {
 // ---- writes ----
 
 const BOOK_FIELDS = ['isbn', 'title', 'authors', 'publisher', 'pubDate', 'lang', 'subject', 'level',
-  'levelTag', 'pages', 'words', 'cover', 'note'];
+  'levelTag', 'pages', 'words', 'cover', 'note', 'series', 'tags'];
 
 export async function saveBook(fields, id) {
   const now = nowIso();
@@ -213,6 +235,14 @@ const photoTomb = (p) => ({ id: p.id, noteId: p.noteId, createdAt: p.createdAt, 
 
 export async function removeNote(id) {
   await write({ notes: [tomb(state.notes.get(id))], photos: photosOf(id).map(photoTomb) });
+}
+
+// Many books at once (the "자동 분류" button): one transaction, one re-render.
+export async function updateBooks(patches) {
+  const now = nowIso();
+  const list = patches.map(({ id, ...fields }) => ({ ...state.books.get(id), ...fields, updatedAt: now }));
+  await write({ books: list });
+  return list.length;
 }
 
 export async function setSubjects(list) {

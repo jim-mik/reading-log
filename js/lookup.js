@@ -1,6 +1,7 @@
 // Book metadata from public catalogs, called straight from the phone's browser.
 //   Kakao book search  - best Korean coverage, title search for autocomplete (needs a free key)
-//   National Library   - page count and subject code for Korean ISBNs (optional key)
+//   National Library   - the Korean ISBN registry: every Korean ISBN, including 전집 volumes that
+//                        bookstores don't list; series, page count, subject code (optional key)
 //   Open Library       - no key; good for English books
 //   Google Books       - no key needed but often over quota; optional key
 
@@ -43,25 +44,40 @@ async function kakao(params, signal) {
   }));
 }
 
-async function nationalLibrary(isbn, signal) {
-  const key = settings().nlKey;
-  if (!key) return null;
-  const q = new URLSearchParams({ cert_key: key, result_style: 'json', page_no: '1', page_size: '1', isbn });
-  const data = await getJson(`https://www.nl.go.kr/seoji/SearchApi.do?${q}`, { signal });
-  const d = data.docs?.[0];
-  if (!d) return null;
+function fromNl(d) {
   const pd = String(d.PUBLISH_PREDATE || '');
+  const series = String(d.SERIES_TITLE || '').trim();
+  const no = String(d.SERIES_NO || '').trim();
   return {
     source: 'nl',
-    isbn,
-    title: d.TITLE || '',
-    authors: d.AUTHOR || '',
-    publisher: d.PUBLISHER || '',
+    isbn: toIsbn13(d.EA_ISBN) || '',
+    title: String(d.TITLE || '').trim(),
+    authors: String(d.AUTHOR || '').trim(),
+    publisher: String(d.PUBLISHER || '').trim(),
     pubDate: /^\d{8}$/.test(pd) ? `${pd.slice(0, 4)}-${pd.slice(4, 6)}-${pd.slice(6)}` : pd,
     pages: firstNumber(d.PAGE),
     cover: d.TITLE_URL || '',
     subject: subjectFromAddCode(d.EA_ADD_CODE),
+    series: series && no ? `${series} ${no}` : series,
   };
+}
+
+async function nlQuery(params, signal) {
+  const key = settings().nlKey;
+  if (!key) return [];
+  const q = new URLSearchParams({ cert_key: key, result_style: 'json', page_no: '1', ...params });
+  return ((await getJson(`https://www.nl.go.kr/seoji/SearchApi.do?${q}`, { signal })).docs || []).map(fromNl);
+}
+
+async function nationalLibrary(isbn, signal) {
+  const d = (await nlQuery({ page_size: '1', isbn }, signal))[0];
+  return d?.title ? { ...d, isbn } : null;
+}
+
+// Title search finds 전집 volumes by their own title or by the set's name.
+async function nlSearch(q, signal) {
+  const lists = await Promise.allSettled([nlQuery({ page_size: '6', title: q }, signal), nlQuery({ page_size: '6', series_title: q }, signal)]);
+  return lists.flatMap((r) => (r.status === 'fulfilled' ? r.value : [])).filter((x) => x.title);
 }
 
 async function openLibraryIsbn(isbn, signal) {
@@ -129,6 +145,7 @@ const PRIORITY = {
   cover: ['kakao', 'nl', 'google', 'openlibrary'],
   pages: ['nl', 'google', 'openlibrary'],
   subject: ['nl'],
+  series: ['nl'],
   lang: ['google'],
   description: ['kakao', 'google'],
 };
@@ -163,10 +180,11 @@ export async function lookupIsbn(raw) {
   return found.length ? { isbn, ...mergeHits(found) } : null;
 }
 
-// Title search for autocomplete: Kakao first, Open Library for English titles.
+// Title search for autocomplete: Kakao, the National Library (전집 volumes), Open Library for English.
 export async function searchTitle(q, signal) {
   const jobs = [];
   if (settings().kakaoKey) jobs.push(kakao({ query: q, target: 'title', size: '8' }, signal));
+  if (settings().nlKey && guessLang(q) !== 'en') jobs.push(nlSearch(q, signal));
   if (!settings().kakaoKey || guessLang(q) !== 'ko') jobs.push(openLibrarySearch(q, signal));
   const lists = (await Promise.allSettled(jobs)).map((r) => (r.status === 'fulfilled' ? r.value : []));
   const seen = new Set();
@@ -185,18 +203,26 @@ export async function searchTitle(q, signal) {
   return out;
 }
 
+// Does a catalog title fit a title read off a cover? With the author matching too, either may be
+// the longer one; without, only the catalog's may be: "안녕, 마음아 12 화가 나요" (a 전집 volume)
+// must not match the single book "안녕, 마음아".
+export function titleFits(read, catalog, authorMatches) {
+  const n = normTitle(read);
+  const t = normTitle(catalog);
+  if (!n || !t) return false;
+  if (t === n) return true;
+  if (Math.min(t.length, n.length) < 4) return false;
+  return t.includes(n) || (authorMatches && n.includes(t));
+}
+
 // Best online match for a title read off a cover (used after AI reads a photo).
 export async function bestTitleMatch(title, authors) {
-  const n = normTitle(title);
-  if (n.length < 2) return null;
+  if (normTitle(title).length < 2) return null;
   const hits = await searchTitle(title).catch(() => []);
   const firstAuthor = normTitle((authors || '').split(/[,;]/)[0]);
-  const close = (x) => {
-    const t = normTitle(x.title);
-    return t === n || (Math.min(t.length, n.length) >= 4 && (t.includes(n) || n.includes(t)));
-  };
-  return hits.find((x) => close(x) && firstAuthor && normTitle(x.authors).includes(firstAuthor))
-    ?? hits.find(close) ?? null;
+  const byAuthor = (x) => !!firstAuthor && normTitle(x.authors).includes(firstAuthor);
+  return hits.find((x) => byAuthor(x) && titleFits(title, x.title, true))
+    ?? hits.find((x) => titleFits(title, x.title, false)) ?? null;
 }
 
 // Quick key checks for the settings page.
@@ -204,7 +230,9 @@ export async function testKey(which) {
   if (which === 'kakao') return (await kakao({ query: '구름빵', size: '1' })).length > 0;
   if (which === 'nl') {
     const q = new URLSearchParams({ cert_key: settings().nlKey, result_style: 'json', page_no: '1', page_size: '1', isbn: '9788949161075' });
-    return Array.isArray((await getJson(`https://www.nl.go.kr/seoji/SearchApi.do?${q}`)).docs);
+    const data = await getJson(`https://www.nl.go.kr/seoji/SearchApi.do?${q}`);
+    if (data.RESULT === 'ERROR') throw new Error(data.ERR_MESSAGE || '키를 확인해 주세요');
+    return Array.isArray(data.docs);
   }
   if (which === 'google') return !!(await googleIsbn('9780439708180'));
   return false;

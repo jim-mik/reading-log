@@ -24,7 +24,7 @@ export function groupOf(row, by) {
   return 'all';
 }
 
-// Period x group totals for the `count` periods (week|month|year) ending at `today`.
+// Period x group totals for the `count` periods (day|week|month|year) ending at `today`.
 export function timeSeries(rows, { unit, count, metric, by, today = todayStr() }) {
   const keys = periodRange(today, unit, count);
   const table = new Map(keys.map((k) => [k, new Map()]));
@@ -37,10 +37,10 @@ export function timeSeries(rows, { unit, count, metric, by, today = todayStr() }
   return { keys, table };
 }
 
-// Totals for this week / month / year / all time.
+// Totals for today / this week / month / year / all time.
 export function headline(rows, metric, today = todayStr()) {
   const from = { week: weekStart(today), month: `${today.slice(0, 7)}-01`, year: `${today.slice(0, 4)}-01-01` };
-  const out = { week: 0, month: 0, year: 0, all: 0 };
+  const out = { today: 0, week: 0, month: 0, year: 0, all: 0 };
   for (const row of rows) {
     if (row.date > today) continue;
     const v = valueOf(row, metric);
@@ -48,6 +48,7 @@ export function headline(rows, metric, today = todayStr()) {
     if (row.date >= from.year) out.year += v;
     if (row.date >= from.month) out.month += v;
     if (row.date >= from.week) out.week += v;
+    if (row.date === today) out.today += v;
   }
   return out;
 }

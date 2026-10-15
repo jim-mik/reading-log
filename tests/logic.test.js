@@ -21,6 +21,10 @@ test('period keys and ranges', () => {
   assert.deepEqual(periodRange('2026-02-10', 'month', 3), ['2025-12', '2026-01', '2026-02']);
   assert.deepEqual(periodRange('2026-10-13', 'week', 2), ['2026-10-05', '2026-10-12']);
   assert.deepEqual(periodRange('2026-10-13', 'year', 3), ['2024', '2025', '2026']);
+  assert.deepEqual(periodRange('2026-03-02', 'day', 3), ['2026-02-28', '2026-03-01', '2026-03-02']);
+  assert.equal(periodKey('2026-10-13', 'day'), '2026-10-13');
+  assert.equal(periodLabel('2026-10-13', 'day'), '13');
+  assert.equal(periodLabel('2026-11-01', 'day'), '11/1');
   assert.equal(addDays('2026-03-01', -1), '2026-02-28');
   assert.equal(periodLabel('2026-01', 'month'), '26년 1월');
   assert.equal(periodLabel('2026-10', 'month'), '10월');
@@ -88,7 +92,7 @@ test('time series sums pages and words, groups by language', () => {
 });
 
 test('headline totals and helpers', () => {
-  assert.deepEqual(headline(rows, 'books', '2026-10-13'), { week: 2, month: 3, year: 4, all: 5 });
+  assert.deepEqual(headline(rows, 'books', '2026-10-13'), { today: 1, week: 2, month: 3, year: 4, all: 5 });
   assert.equal(yearCount(rows, '2026-10-13'), 3);
   assert.equal(topBooks(rows)[0].book.id, 'a');
   assert.equal(missingSize(rows, 'pages'), 1);

@@ -23,11 +23,15 @@ export function renderShelf(root) {
       byBook.get(r.bookId).push(r);
     }
     const n = normTitle(f.q);
+    // "#공룡" looks at tags only; other words at title, authors, series and tags.
+    const tagQ = f.q.trim().startsWith('#') ? n : '';
+    const found = (b) => (tagQ ? (b.tags || []).some((t) => normTitle(t).startsWith(tagQ))
+      : !n || [b.title, b.authors, b.series, ...(b.tags || [])].some((x) => normTitle(x).includes(n)));
     const readBy = (b) => (byBook.get(b.id) || []).filter((r) => f.reader === 'all' || r.readerId === f.reader);
     const last = (b) => (byBook.get(b.id) || []).reduce((m, r) => (r.date > m ? r.date : m), '');
 
     let books = store.books().filter((b) =>
-      (!n || normTitle(b.title).includes(n) || normTitle(b.authors).includes(n)) &&
+      found(b) &&
       (f.lang === 'all' || b.lang === f.lang) &&
       (f.subject === 'all' || (b.subject || 'etc') === f.subject) &&
       (f.status === 'all' || (f.status === 'read') === readBy(b).length > 0));
@@ -62,7 +66,7 @@ export function renderShelf(root) {
 
   const search = h('div', { class: 'search' }, icon('search', 20),
     h('input', {
-      type: 'search', class: 'input', placeholder: '제목이나 지은이로 찾기', value: f.q, 'aria-label': '책 찾기',
+      type: 'search', class: 'input', placeholder: '제목, 지은이, 전집, #태그로 찾기', value: f.q, 'aria-label': '책 찾기',
       onInput: debounce((e) => {
         f.q = e.target.value;
         paintList();

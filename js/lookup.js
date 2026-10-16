@@ -14,7 +14,11 @@ const TIMEOUT_MS = 8000;
 async function getJson(url, { headers, signal } = {}) {
   const timeout = AbortSignal.timeout(TIMEOUT_MS);
   const res = await fetch(url, { headers, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
-  if (!res.ok) throw new Error(`${new URL(url).host} ${res.status}`);
+  if (!res.ok) {
+    // Google and Kakao explain refusals (bad key, API not enabled, quota) in the body.
+    const why = await res.json().then((d) => d.error?.message || d.message || '').catch(() => '');
+    throw new Error(`${new URL(url).host} ${res.status}${why ? `: ${why}` : ''}`);
+  }
   return res.json();
 }
 
@@ -115,10 +119,19 @@ async function openLibrarySearch(q, signal) {
   }));
 }
 
-async function googleIsbn(isbn, signal) {
+const googleUrl = (q) => {
   const key = settings().googleKey;
-  const url = `https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}${key ? `&key=${encodeURIComponent(key)}` : ''}`;
-  const v = (await getJson(url, { signal })).items?.[0]?.volumeInfo;
+  return `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}${key ? `&key=${encodeURIComponent(key)}` : ''}`;
+};
+
+async function googleIsbn(isbn, signal) {
+  // "isbn:" sometimes finds nothing (it did for every ISBN in Oct 2026); then try the bare number,
+  // keeping only a volume that really carries this ISBN.
+  let v = (await getJson(googleUrl(`isbn:${isbn}`), { signal })).items?.[0]?.volumeInfo;
+  if (!v) {
+    v = ((await getJson(googleUrl(isbn), { signal })).items || []).map((x) => x.volumeInfo)
+      .find((x) => (x.industryIdentifiers || []).some((id) => toIsbn13(id.identifier) === isbn));
+  }
   if (!v) return null;
   return {
     source: 'google',
@@ -234,6 +247,7 @@ export async function testKey(which) {
     if (data.RESULT === 'ERROR') throw new Error(data.ERR_MESSAGE || '키를 확인해 주세요');
     return Array.isArray(data.docs);
   }
-  if (which === 'google') return !!(await googleIsbn('9780439708180'));
+  // A title search: it checks the key and quota even when Google's ISBN search is having a bad day.
+  if (which === 'google') return ((await getJson(googleUrl('intitle:harry potter'))).totalItems || 0) > 0;
   return false;
 }

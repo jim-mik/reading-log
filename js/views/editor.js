@@ -32,6 +32,7 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
     touched: new Set(existing ? Object.keys(EMPTY).filter((k) => existing[k]) : []),
     levelFrom: existing?.level ? 'saved' : null, // user | ai | size | saved
     subjectFrom: existing?.subject ? 'saved' : null, // user | catalog | ai | rule | saved
+    langFrom: existing?.lang ? 'saved' : null,
     autoTags: [], // from the title (classify.js), saved with the book unless removed
     removedTags: new Set(),
     description: '',
@@ -60,6 +61,7 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
       for (const k of DETAILS) if (!st.touched.has(k)) st.book[k] = EMPTY[k];
       if (!st.touched.has('tags')) st.book.tags = [];
       if (st.subjectFrom !== 'user') st.subjectFrom = null;
+      if (st.langFrom !== 'user') st.langFrom = null;
       if (['size', 'ai'].includes(st.levelFrom)) {
         st.book.level = null;
         st.levelFrom = null;
@@ -74,6 +76,7 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
       if (!replace && !guessed && (st.touched.has(k) || st.book[k])) continue;
       st.book[k] = v;
       if (k === 'subject') st.subjectFrom = 'catalog';
+      if (k === 'lang') st.langFrom = 'catalog';
       if (replace) st.touched.delete(k);
     }
     autoLevel();
@@ -89,6 +92,14 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
       st.subjectFrom = r.subject ? 'rule' : null;
     }
     st.autoTags = r.tags.filter((t) => !st.removedTags.has(t) && !(st.book.tags || []).includes(t));
+    // Language from the title (Korean vs English), unless a catalog/AI/user value already set it.
+    if (!st.touched.has('lang') && ['rule', null].includes(st.langFrom)) {
+      const g = guessLang(st.book.title);
+      if (g) {
+        st.book.lang = g;
+        st.langFrom = 'rule';
+      }
+    }
   }
   const allBookTags = () => [...new Set([...(st.book.tags || []), ...st.autoTags])];
 
@@ -292,6 +303,7 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
     st.book.title = ui.title.value;
     st.touched.add('title');
     ruleFill();
+    ui.lang.set(st.book.lang);
     ui.subject.set(st.book.subject);
     paintTags();
     paintSubjectHint();
@@ -325,11 +337,32 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
       h('span', { class: 'suggest-sub' }, [b.authors, b.publisher].filter(Boolean).join(' · '))),
     h('span', { class: `tag ${tag === '내 책장' ? 'mine' : ''}` }, tag));
 
+    // "Use exactly what I typed": lets you keep an unlisted title and close the keyboard with one tap.
+    const exact = [...mine, ...others].some((b) => normTitle(b.title) === n);
+    if (!exact) {
+      ui.suggest.append(h('button', {
+        type: 'button', class: 'suggest-item confirm',
+        onPointerdown: (e) => {
+          e.preventDefault();
+          confirmTyped();
+        },
+      }, icon('pencil', 20), h('span', { class: 'suggest-text' },
+        h('span', { class: 'suggest-title' }, `"${q}"`),
+        h('span', { class: 'suggest-sub' }, '이 제목 그대로 쓰기')),
+      h('span', { class: 'tag' }, '입력')));
+    }
     for (const b of mine) ui.suggest.append(row(b, '내 책장', () => useExisting(b)));
     for (const x of others) ui.suggest.append(row(x, '검색', () => pickOnline(x)));
-    if (online === null && q.length >= 2) ui.suggest.append(h('div', { class: 'suggest-note' }, '검색 중…'));
-    else if (!mine.length && !others.length && q.length >= 2) ui.suggest.append(h('div', { class: 'suggest-note' }, '검색 결과가 없어요. 그대로 입력해도 돼요.'));
+    if (online === null && q.length >= 2) ui.suggest.append(h('div', { class: 'suggest-note' }, '찾는 중…'));
     ui.suggest.hidden = !ui.suggest.childElementCount;
+  }
+
+  // Keep the typed title as-is and close the suggestions (and the phone keyboard).
+  function confirmTyped() {
+    st.book.title = ui.title.value.trim();
+    st.touched.add('title');
+    hideSuggest();
+    ui.title.blur();
   }
 
   function hideSuggest() {
@@ -535,6 +568,7 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
   ui.series = field('series', { type: 'text', placeholder: '예: 안녕, 마음아 12', 'aria-label': '전집·시리즈' });
   ui.series.addEventListener('input', () => {
     ruleFill();
+    ui.lang.set(st.book.lang);
     ui.subject.set(st.book.subject);
     paintTags();
     paintSubjectHint();
@@ -557,6 +591,7 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
     onChange: (v) => {
       st.book.lang = v;
       st.touched.add('lang');
+      st.langFrom = 'user';
     },
   });
   ui.subject = chipGroup(store.subjects(), {

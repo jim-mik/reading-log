@@ -82,14 +82,18 @@ export function toIsbn13(raw) {
   return null;
 }
 
-// Korean ISBN add-on code (부가기호, 5 digits): reader group + form + content class (KDC).
-// Only the content class is used, to pre-select a subject.
-export function subjectFromAddCode(code) {
-  if (!/^\d{5}$/.test(code || '')) return null;
-  const cls = Number(code.slice(2));
-  const top = Math.floor(cls / 100);
+// A KDC classification number (한국십진분류, e.g. "863", "411", "813.8") -> one of our subjects.
+export function subjectFromKdc(classNo) {
+  const str = String(classNo ?? '').trim();
+  const cls = Math.floor(Number(str));
+  if (!str || !Number.isFinite(cls) || cls < 0) return null;
   if (cls >= 410 && cls < 420) return 'math';
   if (cls >= 990) return 'bio';
   if (cls >= 590 && cls < 600) return 'life';
-  return { 0: 'etc', 1: 'life', 2: 'life', 3: 'soc', 4: 'sci', 5: 'sci', 6: 'art', 7: 'lang', 8: 'lit', 9: 'soc' }[top];
+  return { 0: 'etc', 1: 'life', 2: 'life', 3: 'soc', 4: 'sci', 5: 'sci', 6: 'art', 7: 'lang', 8: 'lit', 9: 'soc' }[Math.floor(cls / 100)] ?? null;
+}
+
+// Korean ISBN add-on code (부가기호, 5 digits): reader group + form + 3-digit content class (KDC).
+export function subjectFromAddCode(code) {
+  return /^\d{5}$/.test(code || '') ? subjectFromKdc(code.slice(2)) : null;
 }

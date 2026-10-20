@@ -2,10 +2,12 @@
 //   Kakao book search  - best Korean coverage, title search for autocomplete (needs a free key)
 //   National Library   - the Korean ISBN registry: every Korean ISBN, including 전집 volumes that
 //                        bookstores don't list; series, page count, subject code (optional key)
+//   도서관 정보나루       - public-library catalog: 전집 volumes libraries hold, cover and subject;
+//                        no approval wait, so it stands in for the National Library key (optional)
 //   Open Library       - no key; good for English books
 //   Google Books       - no key needed but often over quota; optional key
 
-import { toIsbn13, guessLang, subjectFromAddCode } from './catalog.js';
+import { toIsbn13, guessLang, subjectFromAddCode, subjectFromKdc } from './catalog.js';
 import { settings } from './settings.js';
 import { normTitle } from './util.js';
 
@@ -147,17 +149,49 @@ async function googleIsbn(isbn, signal) {
   };
 }
 
+// 도서관 정보나루 (data4library.kr): the public-library catalog. 200 even on an auth error, so the
+// error is inside the body. Covers come from Aladin over http; serve them over https.
+function fromNara(d) {
+  return {
+    source: 'nara',
+    isbn: toIsbn13(d.isbn13) || '',
+    title: String(d.bookname || '').trim(),
+    authors: String(d.authors || '').trim().replace(/\s*;\s*/g, ', '),
+    publisher: String(d.publisher || '').trim(),
+    pubDate: String(d.publication_year || '').trim(),
+    cover: (d.bookImageURL || '').replace(/^http:/, 'https:'),
+    subject: subjectFromAddCode(d.addition_symbol) || subjectFromKdc(d.class_no),
+  };
+}
+
+async function naraQuery(params, signal) {
+  const key = settings().naraKey;
+  if (!key) return [];
+  const q = new URLSearchParams({ authKey: key, format: 'json', pageNo: '1', pageSize: '10', ...params });
+  const data = await getJson(`https://data4library.kr/api/srchBooks?${q}`, { signal });
+  if (data.response?.error) throw new Error(`정보나루: ${data.response.error}`);
+  return (data.response?.docs || []).map((x) => x.doc).filter(Boolean).map(fromNara).filter((x) => x.title);
+}
+
+async function naraIsbn(isbn, signal) {
+  const d = (await naraQuery({ isbn13: isbn }, signal))[0];
+  return d ? { ...d, isbn } : null;
+}
+
+// `title` is the broad matcher here (keyword is near-exact and misses 전집).
+const naraSearch = (q, signal) => naraQuery({ title: q, pageSize: '8' }, signal);
+
 // ---- merging ----
 
 // Which source to trust first, per field.
 const PRIORITY = {
-  title: ['kakao', 'nl', 'google', 'openlibrary'],
-  authors: ['kakao', 'nl', 'google', 'openlibrary'],
-  publisher: ['kakao', 'nl', 'google', 'openlibrary'],
-  pubDate: ['kakao', 'nl', 'google', 'openlibrary'],
-  cover: ['kakao', 'nl', 'google', 'openlibrary'],
+  title: ['kakao', 'nl', 'nara', 'google', 'openlibrary'],
+  authors: ['kakao', 'nl', 'nara', 'google', 'openlibrary'],
+  publisher: ['kakao', 'nl', 'nara', 'google', 'openlibrary'],
+  pubDate: ['kakao', 'nl', 'nara', 'google', 'openlibrary'],
+  cover: ['kakao', 'nl', 'nara', 'google', 'openlibrary'],
   pages: ['nl', 'google', 'openlibrary'],
-  subject: ['nl'],
+  subject: ['nl', 'nara'],
   series: ['nl'],
   lang: ['google'],
   description: ['kakao', 'google'],
@@ -185,6 +219,7 @@ export async function lookupIsbn(raw) {
   const jobs = [
     kakao({ target: 'isbn', query: isbn }).then((r) => r[0]),
     nationalLibrary(isbn),
+    naraIsbn(isbn),
     openLibraryIsbn(isbn),
     googleIsbn(isbn),
   ];
@@ -193,11 +228,12 @@ export async function lookupIsbn(raw) {
   return found.length ? { isbn, ...mergeHits(found) } : null;
 }
 
-// Title search for autocomplete: Kakao, the National Library (전집 volumes), Open Library for English.
+// Title search for autocomplete: Kakao, the National Library and 정보나루 (전집 volumes), Open Library for English.
 export async function searchTitle(q, signal) {
   const jobs = [];
   if (settings().kakaoKey) jobs.push(kakao({ query: q, target: 'title', size: '8' }, signal));
   if (settings().nlKey && guessLang(q) !== 'en') jobs.push(nlSearch(q, signal));
+  if (settings().naraKey && guessLang(q) !== 'en') jobs.push(naraSearch(q, signal));
   if (!settings().kakaoKey || guessLang(q) !== 'ko') jobs.push(openLibrarySearch(q, signal));
   const lists = (await Promise.allSettled(jobs)).map((r) => (r.status === 'fulfilled' ? r.value : []));
   const seen = new Set();
@@ -249,5 +285,11 @@ export async function testKey(which) {
   }
   // A title search: it checks the key and quota even when Google's ISBN search is having a bad day.
   if (which === 'google') return ((await getJson(googleUrl('intitle:harry potter'))).totalItems || 0) > 0;
+  if (which === 'nara') {
+    const q = new URLSearchParams({ authKey: settings().naraKey, format: 'json', pageNo: '1', pageSize: '1', isbn13: '9788949161075' });
+    const data = await getJson(`https://data4library.kr/api/srchBooks?${q}`);
+    if (data.response?.error) throw new Error(data.response.error);
+    return Array.isArray(data.response?.docs);
+  }
   return false;
 }

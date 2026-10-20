@@ -417,6 +417,8 @@ label.birth .input { flex: 1; min-width: 0; }
 }
 /* In the editor the list spans the whole card (over the cover), aligned to the input's right edge. */
 .title-row .suggest { left: auto; width: min(calc(100vw - 66px), 574px); }
+.suggest-item.confirm { background: var(--accent-soft); }
+.suggest-item.confirm .icon { color: var(--accent); margin: 0 4px; }
 .suggest-item {
   width: 100%;
   display: flex; align-items: center; gap: 10px;

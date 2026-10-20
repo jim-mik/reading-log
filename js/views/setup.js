@@ -234,6 +234,11 @@ export function renderSettings(root, { rerender }) {
       test: () => testKey('nl'),
     }),
     keyField({
+      label: '도서관 정보나루 키 (선택)', key: 'naraKey', placeholder: 'authKey',
+      help: '전국 공공도서관의 책 목록이라, 전집도 바코드로 잘 찾고 표지와 분야도 채워 줘요. 국립중앙도서관 키 승인을 기다리는 동안 대신 쓰면 좋아요. data4library.kr 회원가입 → 데이터활용 → 인증키 신청.',
+      test: () => testKey('nara'),
+    }),
+    keyField({
       label: 'Google Books 키 (선택)', key: 'googleKey', placeholder: 'API key',
       help: '없어도 되지만, 구글 쪽 무료 한도가 자주 차요. 있으면 영어책 쪽수를 더 잘 채워요.',
       test: () => testKey('google'),

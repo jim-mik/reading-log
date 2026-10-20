@@ -5,6 +5,7 @@ const KEY = 'reading-log-settings';
 const DEFAULTS = {
   kakaoKey: '',
   nlKey: '',
+  naraKey: '',
   googleKey: '',
   claudeKey: '',
   claudeModel: 'claude-opus-5-5',

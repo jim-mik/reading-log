@@ -18,10 +18,16 @@ It installs to the home screen on Galaxy S25/S26 through Chrome's "홈 화면에
   read it aloud, and the dates. The date defaults to today, and more dates can be added.
 - **Book info** comes from Kakao book search (Korean books), the National Library of Korea (the Korean ISBN
   registry, so it also knows 전집 volumes that bookstores don't list; series, page count, subject code; also used
-  for title suggestions), Open Library and Google Books (English books).
+  for title suggestions), 도서관 정보나루 (public-library catalog: 전집 volumes libraries hold, cover and subject
+  from KDC — no approval wait, so it stands in while the National Library key is pending), Open Library and Google
+  Books (English books).
 - **전집 (multi-volume sets)**: a barcode no catalog knows is saved with the title typed once, and recognized on
   the next scan. A new ISBN numerically close to one on the shelf from the same publisher block is treated as
   the same set: its series name, publisher, subject, level and tags are filled in. Books have a series field.
+- **언어 and 과목** are chosen automatically from the title as you type (Korean/English by script; subject by the
+  keyword rules below). A value you pick yourself, or one a catalog/AI provides, is never overwritten.
+- When you type a title that isn't in the suggestions, the list offers a **"이 제목 그대로 쓰기"** row; tapping it
+  keeps your text and closes the phone keyboard.
 - **Subject and topic tags** are filled automatically from the title and series name by keyword rules
   (`js/classify.js`; no AI needed), refined by Claude when a key is set (it reuses the family's existing tags).
   설정 → 책 자동 분류 fills empty subjects and tags of books already on the shelf. The shelf search takes #tags.
@@ -51,6 +57,7 @@ It installs to the home screen on Galaxy S25/S26 through Chrome's "홈 화면에
 |---|---|---|
 | Kakao REST API key | developers.kakao.com → 내 애플리케이션 → 앱 → 플랫폼 키 → REST API 키 (leave 허용 IP empty) | Korean book lookup and title autocomplete (recommended) |
 | National Library cert_key | nl.go.kr → 도서관 서비스 → Open API → 인증키 신청 (needs approval) | 전집 volumes and other Korean ISBNs bookstores don't list, series, page counts, subjects |
+| 도서관 정보나루 authKey | data4library.kr → 데이터활용 → 인증키 신청 | 전집 volumes public libraries hold, covers, subjects — a quicker-to-get stand-in for the National Library key |
 | Google Books key | Google Cloud console | Fewer "quota exceeded" misses for English books |
 | Claude API key | console.anthropic.com | Cover-photo reading, subject/level/word-count suggestions |
 

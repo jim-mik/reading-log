@@ -1,7 +1,7 @@
 // Offline support. App files: network first (so updates show up right away),
 // cached copy when offline. The pinned Claude SDK from the CDN: cache first.
 
-const CACHE = 'reading-log-v4';
+const CACHE = 'reading-log-v5';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
   './js/app.js', './js/util.js', './js/catalog.js', './js/store.js', './js/settings.js', './js/lookup.js',

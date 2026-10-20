@@ -4,6 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { classify } from '../js/classify.js';
+import { subjectFromKdc, subjectFromAddCode } from '../js/catalog.js';
 import { titleFits } from '../js/lookup.js';
 import { DEFAULT_SUBJECTS } from '../js/catalog.js';
 import * as store from '../js/store.js';
@@ -43,4 +44,19 @@ test('book by ISBN and the nearest 전집 volume by ISBN', () => {
   assert.equal(store.nearestByIsbn('9788993242195').id, 'isbn_9788993242188');
   assert.equal(store.nearestByIsbn('9788800000000'), null);
   store.state.books.clear();
+});
+
+test('KDC and add-on code map to a subject', () => {
+  assert.equal(subjectFromKdc('863'), 'lit'); // 문학 > 프랑스문학 > 소설
+  assert.equal(subjectFromKdc('813.8'), 'lit'); // decimal KDC
+  assert.equal(subjectFromKdc('411'), 'math'); // 수학
+  assert.equal(subjectFromKdc('404'), 'sci');
+  assert.equal(subjectFromKdc('991'), 'bio'); // 전기
+  assert.equal(subjectFromKdc('598'), 'life'); // 가정학 > 육아
+  assert.equal(subjectFromKdc('707'), 'lang');
+  assert.equal(subjectFromKdc(''), null);
+  // add-on code: reader group(2) + 3-digit KDC.
+  assert.equal(subjectFromAddCode('73860'), 'lit'); // 863
+  assert.equal(subjectFromAddCode('74410'), 'math'); // 410
+  assert.equal(subjectFromAddCode('1234'), null);
 });

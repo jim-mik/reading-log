@@ -39,7 +39,8 @@ It installs to the home screen on Galaxy S25/S26 through Chrome's "홈 화면에
 - **Difficulty**: 5 steps (그림책 → 소설·지식책). The step is suggested from the word count or page count, or by AI,
   and can always be changed by hand. English books also have a free-text field for AR/Lexile levels.
 - **Shelf**: search, filters for read / not read by a given person, language, subject.
-- **Stats**: today / this week / month / year / all-time totals; stacked columns by day (14 days), week, month or year, split by person,
+- **Stats**: today / this week / month / year / all-time totals, plus a 서로 다른 책 row counting distinct books
+  (re-reads counted once); stacked columns by day (14 days), week, month or year, split by person,
   language, subject, difficulty or read-aloud; counted in books, pages or words; most-read books;
   progress through the shelf for each person.
 - **Notes** (노트 tab, and on each book's page): what a child learned, from a book or not. Text with #tags, up to

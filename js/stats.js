@@ -53,6 +53,22 @@ export function headline(rows, metric, today = todayStr()) {
   return out;
 }
 
+// Distinct books read (re-reads counted once) in each period window.
+export function distinctBooks(rows, today = todayStr()) {
+  const from = { week: weekStart(today), month: `${today.slice(0, 7)}-01`, year: `${today.slice(0, 4)}-01-01` };
+  const sets = { today: new Set(), week: new Set(), month: new Set(), year: new Set(), all: new Set() };
+  for (const row of rows) {
+    if (row.date > today) continue;
+    const id = row.book.id;
+    sets.all.add(id);
+    if (row.date >= from.year) sets.year.add(id);
+    if (row.date >= from.month) sets.month.add(id);
+    if (row.date >= from.week) sets.week.add(id);
+    if (row.date === today) sets.today.add(id);
+  }
+  return { today: sets.today.size, week: sets.week.size, month: sets.month.size, year: sets.year.size, all: sets.all.size };
+}
+
 // How many year bars to show: from the first record's year to now, at least 3.
 export function yearCount(rows, today = todayStr()) {
   const first = rows.reduce((m, r) => (r.date < m ? r.date : m), today);

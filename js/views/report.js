@@ -3,7 +3,7 @@
 import { h, periodLabel, todayStr, fmtNum, compactNum } from '../util.js';
 import { LANGS, LEVELS } from '../catalog.js';
 import * as store from '../store.js';
-import { METRICS, timeSeries, headline, yearCount, topBooks, missingSize } from '../stats.js';
+import { METRICS, timeSeries, headline, distinctBooks, yearCount, topBooks, missingSize } from '../stats.js';
 import { stackedBars } from '../chart.js';
 import { chipGroup, select, cover, readerColor, slotColor, subjectColor, levelColor, OTHER_COLOR, whoChip, emptyState } from '../ui.js';
 import { openBook } from './book.js';
@@ -79,6 +79,14 @@ export function renderStats(root, { rerender }) {
   root.append(h('div', { class: 'tiles' },
     [['오늘', t.today], ['이번 주', t.week], ['이번 달', t.month], ['올해', t.year], ['전체', t.all]].map(([label, v]) =>
       h('div', { class: 'tile' }, h('span', { class: 'tile-label' }, label), h('span', { class: 'tile-value' }, fmt(v), h('small', null, unit))))));
+
+  // Distinct books (re-reads counted once), so "read 12 times" vs "8 different books" is clear.
+  const u = distinctBooks(rows, today);
+  root.append(h('div', { class: 'distinct' },
+    h('span', { class: 'distinct-label muted' }, '서로 다른 책 (여러 번 읽은 책은 1권)'),
+    h('div', { class: 'tiles sub' },
+      [['오늘', u.today], ['이번 주', u.week], ['이번 달', u.month], ['올해', u.year], ['전체', u.all]].map(([label, v]) =>
+        h('div', { class: 'tile' }, h('span', { class: 'tile-label' }, label), h('span', { class: 'tile-value' }, fmtNum(v), h('small', null, '권')))))));
 
   // Chart
   const count = f.unit === 'year' ? yearCount(rows, today) : f.unit === 'day' ? 14 : 12;

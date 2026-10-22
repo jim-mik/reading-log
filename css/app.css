@@ -299,6 +299,10 @@ table.mini tbody tr + tr { border-top: 1px solid var(--grid); }
 .tile-label { font-size: 12px; color: var(--muted); }
 .tile-value { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; white-space: nowrap; }
 .tile-value small { font-size: 12px; font-weight: 600; color: var(--text-2); margin-left: 2px; }
+.distinct { display: flex; flex-direction: column; gap: 6px; }
+.distinct-label { font-size: 13px; }
+.tiles.sub .tile { padding: 8px 10px; background: var(--surface-2); }
+.tiles.sub .tile-value { font-size: 18px; }
 .chart-controls { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
 .chart-controls .select { width: auto; min-height: 40px; font-size: 14px; }
 .progress-row { display: grid; grid-template-columns: 72px 1fr; gap: 4px 10px; align-items: center; }

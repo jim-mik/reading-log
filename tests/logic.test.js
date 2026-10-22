@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { weekStart, periodKey, periodRange, addDays, periodLabel, normTitle } from '../js/util.js';
 import { toIsbn13, isValidIsbn13, levelFromSize, subjectFromAddCode, guessLang } from '../js/catalog.js';
-import { timeSeries, headline, yearCount, topBooks, missingSize } from '../js/stats.js';
+import { timeSeries, headline, distinctBooks, yearCount, topBooks, missingSize } from '../js/stats.js';
 import { mergeHits } from '../js/lookup.js';
 
 test('weeks start on Monday', () => {
@@ -97,6 +97,14 @@ test('headline totals and helpers', () => {
   assert.equal(topBooks(rows)[0].book.id, 'a');
   assert.equal(missingSize(rows, 'pages'), 1);
   assert.equal(missingSize(rows, 'books'), 0);
+});
+
+test('distinct books count re-reads once', () => {
+  // rows: book A read on 10-13, 10-12, 12-31(prev yr); book B on 10-05, 09-30.
+  const d = distinctBooks(rows, '2026-10-13');
+  assert.deepEqual(d, { today: 1, week: 1, month: 2, year: 2, all: 2 }); // this week's 2 readings are the same book
+  // all 5 readings but only 2 distinct books; headline 권수 counts 5 total.
+  assert.equal(headline(rows, 'books', '2026-10-13').all, 5);
 });
 
 test('catalog merge prefers the right source per field', () => {

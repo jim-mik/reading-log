@@ -15,7 +15,8 @@ It installs to the home screen on Galaxy S25/S26 through Chrome's "홈 화면에
 
 - **Add a book**: live barcode scan, a photo of the cover or barcode, or typing a title (autocomplete shows books
   already on the shelf first, then online results). Pick who read it (several people at once), whether a parent
-  read it aloud, and the dates. The date defaults to today, and more dates can be added.
+  read it aloud, and the dates. The date defaults to today, with 오늘 / 어제 / 그저께 quick chips (one tap when you
+  log a book a day or two late) and a date picker for older days; more dates can be added.
 - **Book info** comes from Kakao book search (Korean books), the National Library of Korea (the Korean ISBN
   registry, so it also knows 전집 volumes that bookstores don't list; series, page count, subject code; also used
   for title suggestions), 도서관 정보나루 (public-library catalog: 전집 volumes libraries hold, cover and subject

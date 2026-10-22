@@ -390,25 +390,42 @@ export function openEditor({ bookId = null, mode = 'record', start = null, shelf
 
   // ---------- reading dates ----------
 
+  // Quick picks cover the usual cases (read today, or forgot to log it yesterday) without opening
+  // the phone's date picker. The native input stays for any older date.
+  const QUICK = [{ label: '오늘', back: 0 }, { label: '어제', back: 1 }, { label: '그저께', back: 2 }];
+
   function paintDates() {
     clear(ui.dates);
+    const today = todayStr();
     st.dates.forEach((d, i) => {
-      ui.dates.append(h('div', { class: 'date-row' },
-        h('input', {
-          type: 'date', class: 'input', value: d, max: todayStr(), 'aria-label': `읽은 날짜 ${i + 1}`,
-          onChange: (e) => {
-            if (e.target.value) st.dates[i] = e.target.value;
-            paintSave();
-          },
-        }),
-        st.dates.length > 1 && h('button', {
-          type: 'button', class: 'icon-btn', 'aria-label': '이 날짜 빼기',
-          onClick: () => {
-            st.dates.splice(i, 1);
-            paintDates();
-            paintSave();
-          },
-        }, icon('close', 18))));
+      const setDate = (v) => {
+        if (!v) return;
+        st.dates[i] = v;
+        paintDates();
+        paintSave();
+      };
+      const quick = h('div', { class: 'chips date-quick' }, QUICK.map(({ label, back }) => {
+        const day = addDays(today, -back);
+        return h('button', {
+          type: 'button', class: 'chip', 'aria-pressed': String(d === day),
+          onClick: () => setDate(day),
+        }, label);
+      }));
+      ui.dates.append(h('div', { class: 'date-block' },
+        quick,
+        h('div', { class: 'date-row' },
+          h('input', {
+            type: 'date', class: 'input', value: d, max: today, 'aria-label': `읽은 날짜 ${i + 1}`,
+            onChange: (e) => setDate(e.target.value),
+          }),
+          st.dates.length > 1 && h('button', {
+            type: 'button', class: 'icon-btn', 'aria-label': '이 날짜 빼기',
+            onClick: () => {
+              st.dates.splice(i, 1);
+              paintDates();
+              paintSave();
+            },
+          }, icon('close', 18)))));
     });
   }
 

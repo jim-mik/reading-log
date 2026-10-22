@@ -435,7 +435,10 @@ label.birth .input { flex: 1; min-width: 0; }
 .book-summary { flex-direction: row; align-items: center; gap: 12px; }
 .summary-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .summary-text .muted { font-size: 13px; }
-.dates { display: flex; flex-direction: column; gap: 8px; }
+.dates { display: flex; flex-direction: column; gap: 12px; }
+.date-block { display: flex; flex-direction: column; gap: 6px; }
+.date-block + .date-block { border-top: 1px solid var(--grid); padding-top: 12px; }
+.date-quick { gap: 6px; }
 .date-row { display: flex; gap: 6px; align-items: center; }
 .date-row .input { flex: 1; }
 

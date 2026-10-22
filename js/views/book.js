@@ -4,6 +4,7 @@ import { h, clear, prettyDate, fmtNum } from '../util.js';
 import * as store from '../store.js';
 import { openOverlay, closeOverlay, toast, cover, icon, whoChip, langLabel, levelLabel } from '../ui.js';
 import { openEditor } from './editor.js';
+import { openReadEditor } from './readedit.js';
 import { openNoteEditor, noteRow } from './notes.js';
 
 export function openBook(id) {
@@ -25,9 +26,11 @@ export function openBook(id) {
     });
 
     const history = rs.map((x) => h('li', { class: 'hist-row' },
-      h('span', { class: 'hist-date' }, prettyDate(x.date)),
-      whoChip(store.getReader(x.readerId)),
-      x.aloud && h('span', { class: 'badge' }, '읽어 줌'),
+      h('button', { class: 'hist-main', onClick: () => openReadEditor(x.id) },
+        h('span', { class: 'hist-date' }, prettyDate(x.date)),
+        whoChip(store.getReader(x.readerId)),
+        x.aloud && h('span', { class: 'badge' }, '읽어 줌'),
+        h('span', { class: 'hist-edit muted' }, '고치기')),
       h('button', {
         class: 'icon-btn', 'aria-label': '이 기록 지우기',
         onClick: async () => {

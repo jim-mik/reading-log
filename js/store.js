@@ -183,6 +183,13 @@ export async function addReads(bookId, readerIds, dates, aloud) {
 
 const tomb = (x) => ({ ...x, deletedAt: nowIso(), updatedAt: nowIso() });
 
+// Change an existing reading record (date, who, read-aloud).
+export async function updateRead(id, fields) {
+  const prev = state.reads.get(id);
+  if (!prev || prev.deletedAt) return;
+  await write({ reads: [{ ...prev, ...fields, updatedAt: nowIso() }] });
+}
+
 export async function removeRead(id) {
   await write({ reads: [tomb(state.reads.get(id))] });
 }

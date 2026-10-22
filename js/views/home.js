@@ -8,6 +8,7 @@ import { headline } from '../stats.js';
 import { icon, cover, whoChip, emptyState } from '../ui.js';
 import { openEditor } from './editor.js';
 import { openBook } from './book.js';
+import { openReadEditor } from './readedit.js';
 
 export function renderHome(root, { goTo }) {
   const rows = store.reads().map((r) => ({ ...r, book: store.getBook(r.bookId) }));
@@ -54,7 +55,7 @@ export function renderHome(root, { goTo }) {
     byDate.size
       ? [...byDate].map(([date, items]) => h('div', { class: 'day' },
         h('h4', null, date === today ? `오늘 · ${prettyDate(date)}` : prettyDate(date)),
-        items.map((g) => h('button', { class: 'row', onClick: () => openBook(g.book.id) },
+        items.map((g) => h('button', { class: 'row', onClick: () => (g.reads.length === 1 ? openReadEditor(g.reads[0].id) : openBook(g.book.id)) },
           cover(g.book, 's'),
           h('span', { class: 'row-main' },
             h('span', { class: 'row-title' }, g.book.title),

@@ -49,6 +49,8 @@ It installs to the home screen on Galaxy S25/S26 through Chrome's "홈 화면에
   This is step 1 of tracking what each child learned and forgot; recall checks come next.
 - **Family sync** (optional): both parents' phones share one set of records through a Google Sheet, and the sheet
   shows them as readable tables. See below.
+- **Edit a reading record**: tap an entry in a book's 읽은 기록 list (or a single-read row in the home 최근 기록
+  list) to change its date (오늘/어제/그저께 chips + picker), who read it, or read-aloud, or delete it.
 - **Backup**: JSON backup and merge-import (newest edit wins, deletions carry over, the same book or read logged
   on two phones is kept once). A CSV export opens in Excel.
 
@@ -122,7 +124,7 @@ js/classify.js                            subject and topic tags from a title, w
 js/ai.js                                  Claude: read a cover photo / classify a book
 js/media.js                               photos, barcode detection
 js/stats.js, js/chart.js                  aggregation, SVG stacked-column chart
-js/views/*.js                             home, shelf, notes, stats, settings, editor, book detail, scanner
+js/views/*.js                             home, shelf, notes, stats, settings, editor, book detail, scanner, read-edit
 sync/apps-script.js                       the Google Apps Script sync server (pasted into the family's sheet)
 ```
 
